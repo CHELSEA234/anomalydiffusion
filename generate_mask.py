@@ -87,13 +87,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--sample_name",
-        default='capsule',
-        help="whether use ht encoder",
+        default='bottle'
     )
     parser.add_argument(
         "--anomaly_name",
-        default='crack',
-        help="whether use ht encoder",
+        default='broken_small'
     )
     parser.add_argument(
         "--data_root",
@@ -103,10 +101,13 @@ if __name__ == "__main__":
 
     opt = parser.parse_args()
     config = OmegaConf.load("configs/latent-diffusion/txt2img-1p4B-finetune.yaml")
-    actual_resume = './models/ldm/text2img-large/model.ckpt'
+    actual_resume = "/research/cvl-guoxia11/anomaly_detection_v2/AnoGen/DIFFUSION/models/ldm/text2img-large/model.ckpt"
     model = load_model_from_config(config, actual_resume)
     sample_name=opt.sample_name
     anomaly_name=opt.anomaly_name
+
+    print(sample_name,anomaly_name)
+    # import sys;sys.exit(0)
     model.embedding_manager.load('logs/mask-checkpoints/%s-%s/checkpoints/embeddings.pt'%(sample_name,anomaly_name))
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     model = model.to(device)

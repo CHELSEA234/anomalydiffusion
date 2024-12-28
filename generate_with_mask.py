@@ -92,11 +92,11 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--sample_name",
-        default='capsule',
+        default='bottle'
     )
     parser.add_argument(
         "--anomaly_name",
-        default='crack',
+        default='broken_small'
     )
     parser.add_argument(
         "--adaptive_mask",
@@ -107,7 +107,7 @@ if __name__ == "__main__":
     # setup_seed(42)
     opt = parser.parse_args()
     config = OmegaConf.load("configs/latent-diffusion/txt2img-1p4B-finetune-encoder+embedding.yaml")
-    actual_resume = './models/ldm/text2img-large/model.ckpt'
+    actual_resume = "/research/cvl-guoxia11/anomaly_detection_v2/AnoGen/DIFFUSION/models/ldm/text2img-large/model.ckpt"
     model = load_model_from_config(config, actual_resume)
     sample_name=opt.sample_name
     anomaly_name=opt.anomaly_name
