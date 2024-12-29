@@ -1,7 +1,4 @@
-### GX: this script is for the debug purpose.
-import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "5"
-import argparse, sys, datetime, glob, importlib, csv
+import argparse, os, sys, datetime, glob, importlib, csv
 import numpy as np
 import time
 import torch
@@ -228,20 +225,12 @@ def get_parser(**parser_kwargs):
                         default='anomaly',
                         help="Word to use as source for initial token embedding")
 
-    # parser.add_argument("--gpus",
-    #                     type=str,
-    #                     default='0,')
-
     return parser
 
 parser = get_parser()
 parser = Trainer.add_argparse_args(parser)
-# parser['gpus'] = '0,' ## GX: I guess gpus is defined in the pytorch-lightning.
-opt, unknown = parser.parse_known_args()
 
-# print(opt)
-# print(opt['gpus'])
-# import sys;sys.exit(0)
+opt, unknown = parser.parse_known_args()
 # import wandb
 # wandb.init(config=opt,
 #            project='anomaly diffusion',
@@ -630,17 +619,10 @@ if __name__ == "__main__":
     lightning_config = config.pop("lightning", OmegaConf.create())
     # merge trainer cli with config
     trainer_config = lightning_config.get("trainer", OmegaConf.create())
-
-    # print(opt)
-    # print()
-    # import sys;sys.exit(0)
-    print(trainer_config)
-    print()
     # default to ddp
     trainer_config["accelerator"] = "ddp"
     for k in nondefault_trainer_args(opt):
         trainer_config[k] = getattr(opt, k)
-    trainer_config = {'benchmark': True, 'max_steps': 1000000, 'accelerator': 'ddp', 'gpus': '0,'}
     if not "gpus" in trainer_config:
         del trainer_config["accelerator"]
         cpu = True
@@ -650,9 +632,6 @@ if __name__ == "__main__":
         cpu = False
     trainer_opt = argparse.Namespace(**trainer_config)
     lightning_config.trainer = trainer_config
-    print()
-    print(trainer_config)
-    # import sys;sys.exit(0)
 
     # model
 
@@ -834,8 +813,8 @@ if __name__ == "__main__":
     #data = instantiate_from_config(config.data)
 
     data = instantiate_from_config(config.data)
-    data.prepare_data()     ## GX: this function calls instantiate_from_config, which initializes the dataset.
-    data.setup()        ## GX: not sure the purpose of this function.
+    data.prepare_data()
+    data.setup()
     print("#### Data #####")
     for k in data.datasets:
         print(f"{k}, {data.datasets[k].__class__.__name__}, {len(data.datasets[k])}")
@@ -883,9 +862,9 @@ if __name__ == "__main__":
     signal.signal(signal.SIGUSR1, melk)
     signal.signal(signal.SIGUSR2, divein)
 
-    # print("begin to run things here...")
-    # print("begin to run things here...")
-    # import sys;sys.exit(0)
+    print("begin to run things here...")
+    print("begin to run things here...")
+    import sys;sys.exit(0)
 
     # run
     if opt.train:

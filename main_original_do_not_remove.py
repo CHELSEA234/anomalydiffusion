@@ -1,7 +1,4 @@
-### GX: this script is for the debug purpose.
-import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "5"
-import argparse, sys, datetime, glob, importlib, csv
+import argparse, os, sys, datetime, glob, importlib, csv
 import numpy as np
 import time
 import torch
@@ -66,9 +63,9 @@ def get_parser(**parser_kwargs):
     )
     parser.add_argument(
         "--mvtec_path",
-        type=str, default="/user/guoxia11/cvl/anomaly_detection/anomaly_detection_dataset/mvtec",
+        type=str, default=None,
         help="mvtec_path",
-        # required=True
+        required=True
     )
     parser.add_argument(
         "--data_enhance",
@@ -99,7 +96,7 @@ def get_parser(**parser_kwargs):
     )
     parser.add_argument(
         "--spatial_encoder_embedding",
-        action="store_true", default=True,
+        action="store_true", default=False,
         help="whether use ht encoder",
     )
     parser.add_argument(
@@ -112,7 +109,7 @@ def get_parser(**parser_kwargs):
         "--name",
         type=str,
         const=True,
-        default="test",
+        default="",
         nargs="?",
         help="postfix for logdir",
     )
@@ -132,15 +129,14 @@ def get_parser(**parser_kwargs):
         metavar="base_config.yaml",
         help="paths to base configs. Loaded from left-to-right. "
              "Parameters can be overwritten or added with command-line options of the form `--key value`.",
-        # default=list(),
-        default=['/research/cvl-guoxia11/anomaly_detection_v2/anomalydiffusion/configs/latent-diffusion/txt2img-1p4B-finetune-encoder+embedding.yaml']
+        default=list(),
     )
     parser.add_argument(
         "-t",
         "--train",
         type=str2bool,
         const=True,
-        default=True,
+        default=False,
         nargs="?",
         help="train",
     )
@@ -206,8 +202,7 @@ def get_parser(**parser_kwargs):
 
     parser.add_argument("--actual_resume",
                         type=str,
-                        default="/research/cvl-guoxia11/anomaly_detection_v2/AnoGen/DIFFUSION/models/ldm/text2img-large/model.ckpt",
-                        # required=True,
+                        required=True,
                         help="Path to model to actually resume from")
 
     parser.add_argument("--data_root",
@@ -225,23 +220,14 @@ def get_parser(**parser_kwargs):
 
     parser.add_argument("--init_word",
                         type=str,
-                        default='anomaly',
                         help="Word to use as source for initial token embedding")
-
-    # parser.add_argument("--gpus",
-    #                     type=str,
-    #                     default='0,')
 
     return parser
 
 parser = get_parser()
 parser = Trainer.add_argparse_args(parser)
-# parser['gpus'] = '0,' ## GX: I guess gpus is defined in the pytorch-lightning.
-opt, unknown = parser.parse_known_args()
 
-# print(opt)
-# print(opt['gpus'])
-# import sys;sys.exit(0)
+opt, unknown = parser.parse_known_args()
 # import wandb
 # wandb.init(config=opt,
 #            project='anomaly diffusion',
@@ -623,272 +609,280 @@ if __name__ == "__main__":
     cfgdir = os.path.join(logdir, "configs")
     seed_everything(opt.seed)
 
-    # init and save configs
-    configs = [OmegaConf.load(cfg) for cfg in opt.base]
-    cli = OmegaConf.from_dotlist(unknown)
-    config = OmegaConf.merge(*configs, cli)
-    lightning_config = config.pop("lightning", OmegaConf.create())
-    # merge trainer cli with config
-    trainer_config = lightning_config.get("trainer", OmegaConf.create())
+    try:
+        # init and save configs
+        configs = [OmegaConf.load(cfg) for cfg in opt.base]
+        cli = OmegaConf.from_dotlist(unknown)
+        config = OmegaConf.merge(*configs, cli)
+        lightning_config = config.pop("lightning", OmegaConf.create())
+        # merge trainer cli with config
+        trainer_config = lightning_config.get("trainer", OmegaConf.create())
+        # default to ddp
+        trainer_config["accelerator"] = "ddp"
+        for k in nondefault_trainer_args(opt):
+            trainer_config[k] = getattr(opt, k)
+        if not "gpus" in trainer_config:
+            del trainer_config["accelerator"]
+            cpu = True
+        else:
+            gpuinfo = trainer_config["gpus"]
+            print(f"Running on GPUs {gpuinfo}")
+            cpu = False
+        trainer_opt = argparse.Namespace(**trainer_config)
+        lightning_config.trainer = trainer_config
 
-    # print(opt)
-    # print()
-    # import sys;sys.exit(0)
-    print(trainer_config)
-    print()
-    # default to ddp
-    trainer_config["accelerator"] = "ddp"
-    for k in nondefault_trainer_args(opt):
-        trainer_config[k] = getattr(opt, k)
-    trainer_config = {'benchmark': True, 'max_steps': 1000000, 'accelerator': 'ddp', 'gpus': '0,'}
-    if not "gpus" in trainer_config:
-        del trainer_config["accelerator"]
-        cpu = True
-    else:
-        gpuinfo = trainer_config["gpus"]
-        print(f"Running on GPUs {gpuinfo}")
-        cpu = False
-    trainer_opt = argparse.Namespace(**trainer_config)
-    lightning_config.trainer = trainer_config
-    print()
-    print(trainer_config)
-    # import sys;sys.exit(0)
+        # model
 
-    # model
+        # config.model.params.personalization_config.params.init_word = opt.init_word
+        config.model.params.personalization_config.params.embedding_manager_ckpt = opt.embedding_manager_ckpt
+        if opt.placeholder_string:
+            config.model.params.personalization_config.params.placeholder_strings = [opt.placeholder_string]
 
-    # config.model.params.personalization_config.params.init_word = opt.init_word
-    config.model.params.personalization_config.params.embedding_manager_ckpt = opt.embedding_manager_ckpt
-    if opt.placeholder_string:
-        config.model.params.personalization_config.params.placeholder_strings = [opt.placeholder_string]
+        if opt.init_word:
+            config.model.params.personalization_config.params.initializer_words[0] = opt.init_word
+        if opt.actual_resume:
+            model = load_model_from_config(config, opt.actual_resume)
+        else:
+            model = instantiate_from_config(config.model)
+        if opt.spatial_encoder_embedding:
+            model.prepare_spatial_encoder(optimze_together=True,data_enhance=opt.data_enhance)
+        elif opt.spatial_encoder:
+            model.prepare_spatial_encoder()
+        if opt.test_dataset:
+            model.prepare_test_dataset(opt.sample_name,opt.anomaly_name)
+        if opt.attention_mask:
+            model.attention_mask=True
+            model.model.diffusion_model.attention_mask=True
+        if opt.log_loss:
+            model.log_loss=True
+        # trainer and callbacks
+        trainer_kwargs = dict()
 
-    if opt.init_word:
-        config.model.params.personalization_config.params.initializer_words[0] = opt.init_word
-    if opt.actual_resume:
-        model = load_model_from_config(config, opt.actual_resume)
-    else:
-        model = instantiate_from_config(config.model)
-    if opt.spatial_encoder_embedding:
-        model.prepare_spatial_encoder(optimze_together=True,data_enhance=opt.data_enhance)
-    elif opt.spatial_encoder:
-        model.prepare_spatial_encoder()
-    if opt.test_dataset:
-        model.prepare_test_dataset(opt.sample_name,opt.anomaly_name)
-    if opt.attention_mask:
-        model.attention_mask=True
-        model.model.diffusion_model.attention_mask=True
-    if opt.log_loss:
-        model.log_loss=True
-    # trainer and callbacks
-    trainer_kwargs = dict()
-
-    # default logger configs
-    default_logger_cfgs = {
-        "wandb": {
-            "target": "pytorch_lightning.loggers.WandbLogger",
-            "params": {
-                "name": nowname,
-                "save_dir": logdir,
-                "offline": opt.debug,
-                "id": nowname,
-            }
-        },
-        "testtube": {
-            "target": "pytorch_lightning.loggers.TestTubeLogger",
-            "params": {
-                "name": "testtube",
-                "save_dir": logdir,
-            }
-        },
-    }
-    default_logger_cfg = default_logger_cfgs["testtube"]
-    if "logger" in lightning_config:
-        logger_cfg = lightning_config.logger
-    else:
-        logger_cfg = OmegaConf.create()
-    logger_cfg = OmegaConf.merge(default_logger_cfg, logger_cfg)
-    trainer_kwargs["logger"] = instantiate_from_config(logger_cfg)
-
-    # modelcheckpoint - use TrainResult/EvalResult(checkpoint_on=metric) to
-    # specify which metric is used to determine best models
-    default_modelckpt_cfg = {
-        "target": "pytorch_lightning.callbacks.ModelCheckpoint",
-        "params": {
-            "dirpath": ckptdir,
-            "filename": "{epoch:06}",
-            "verbose": True,
-            "save_last": True,
+        # default logger configs
+        default_logger_cfgs = {
+            "wandb": {
+                "target": "pytorch_lightning.loggers.WandbLogger",
+                "params": {
+                    "name": nowname,
+                    "save_dir": logdir,
+                    "offline": opt.debug,
+                    "id": nowname,
+                }
+            },
+            "testtube": {
+                "target": "pytorch_lightning.loggers.TestTubeLogger",
+                "params": {
+                    "name": "testtube",
+                    "save_dir": logdir,
+                }
+            },
         }
-    }
-    if hasattr(model, "monitor"):
-        print(f"Monitoring {model.monitor} as checkpoint metric.")
-        default_modelckpt_cfg["params"]["monitor"] = model.monitor
-        default_modelckpt_cfg["params"]["save_top_k"] = 1
+        default_logger_cfg = default_logger_cfgs["testtube"]
+        if "logger" in lightning_config:
+            logger_cfg = lightning_config.logger
+        else:
+            logger_cfg = OmegaConf.create()
+        logger_cfg = OmegaConf.merge(default_logger_cfg, logger_cfg)
+        trainer_kwargs["logger"] = instantiate_from_config(logger_cfg)
 
-    if "modelcheckpoint" in lightning_config:
-        modelckpt_cfg = lightning_config.modelcheckpoint
-    else:
-        modelckpt_cfg = OmegaConf.create()
-    modelckpt_cfg = OmegaConf.merge(default_modelckpt_cfg, modelckpt_cfg)
-    print(f"Merged modelckpt-cfg: \n{modelckpt_cfg}")
-    if version.parse(pl.__version__) < version.parse('1.4.0'):
-        trainer_kwargs["checkpoint_callback"] = instantiate_from_config(modelckpt_cfg)
-
-    # add callback which sets up log directory
-    default_callbacks_cfg = {
-        "setup_callback": {
-            "target": "main.SetupCallback",
+        # modelcheckpoint - use TrainResult/EvalResult(checkpoint_on=metric) to
+        # specify which metric is used to determine best models
+        default_modelckpt_cfg = {
+            "target": "pytorch_lightning.callbacks.ModelCheckpoint",
             "params": {
-                "resume": opt.resume,
-                "now": now,
-                "logdir": logdir,
-                "ckptdir": ckptdir,
-                "cfgdir": cfgdir,
-                "config": config,
-                "lightning_config": lightning_config,
+                "dirpath": ckptdir,
+                "filename": "{epoch:06}",
+                "verbose": True,
+                "save_last": True,
             }
-        },
-        "image_logger": {
-            "target": "main.ImageLogger",
-            "params": {
-                "batch_frequency": 750,
-                "max_images": 4,
-                "clamp": True,
-                "test_dataset":opt.test_dataset,
-                "sample_name": opt.sample_name,
-                "anomaly_name":opt.anomaly_name,
-                "attention_mask":opt.attention_mask
-            }
-        },
-        "learning_rate_logger": {
-            "target": "main.LearningRateMonitor",
-            "params": {
-                "logging_interval": "step",
-                # "log_momentum": True
-            }
-        },
-        "cuda_callback": {
-            "target": "main.CUDACallback"
-        },
-    }
-    if version.parse(pl.__version__) >= version.parse('1.4.0'):
-        default_callbacks_cfg.update({'checkpoint_callback': modelckpt_cfg})
-
-    if "callbacks" in lightning_config:
-        callbacks_cfg = lightning_config.callbacks
-    else:
-        callbacks_cfg = OmegaConf.create()
-
-    if 'metrics_over_trainsteps_checkpoint' in callbacks_cfg:
-        print(
-            'Caution: Saving checkpoints every n train steps without deleting. This might require some free space.')
-        default_metrics_over_trainsteps_ckpt_dict = {
-            'metrics_over_trainsteps_checkpoint':
-                {"target": 'pytorch_lightning.callbacks.ModelCheckpoint',
-                    'params': {
-                        "dirpath": os.path.join(ckptdir, 'trainstep_checkpoints'),
-                        "filename": "{epoch:06}-{step:09}",
-                        "verbose": True,
-                        'save_top_k': -1,
-                        'every_n_train_steps': 10000,
-                        'save_weights_only': True
-                    }
-                    }
         }
-        default_callbacks_cfg.update(default_metrics_over_trainsteps_ckpt_dict)
+        if hasattr(model, "monitor"):
+            print(f"Monitoring {model.monitor} as checkpoint metric.")
+            default_modelckpt_cfg["params"]["monitor"] = model.monitor
+            default_modelckpt_cfg["params"]["save_top_k"] = 1
 
-    callbacks_cfg = OmegaConf.merge(default_callbacks_cfg, callbacks_cfg)
-    if 'ignore_keys_callback' in callbacks_cfg and hasattr(trainer_opt, 'resume_from_checkpoint'):
-        callbacks_cfg.ignore_keys_callback.params['ckpt_path'] = trainer_opt.resume_from_checkpoint
-    elif 'ignore_keys_callback' in callbacks_cfg:
-        del callbacks_cfg['ignore_keys_callback']
+        if "modelcheckpoint" in lightning_config:
+            modelckpt_cfg = lightning_config.modelcheckpoint
+        else:
+            modelckpt_cfg = OmegaConf.create()
+        modelckpt_cfg = OmegaConf.merge(default_modelckpt_cfg, modelckpt_cfg)
+        print(f"Merged modelckpt-cfg: \n{modelckpt_cfg}")
+        if version.parse(pl.__version__) < version.parse('1.4.0'):
+            trainer_kwargs["checkpoint_callback"] = instantiate_from_config(modelckpt_cfg)
 
-    trainer_kwargs["callbacks"] = [instantiate_from_config(callbacks_cfg[k]) for k in callbacks_cfg]
-    trainer_kwargs["max_steps"] = trainer_opt.max_steps
-    trainer = Trainer.from_argparse_args(trainer_opt, **trainer_kwargs)
-    trainer.logdir = logdir  ###
-    if opt.spatial_encoder_embedding:
-        config.data.params.train.params.mvtec_path = opt.mvtec_path
-        config.data.params.train.target = 'ldm.data.personalized.Personalized_mvtec_encoder'
-        config.data.params.train.params.data_enhance=True
-        if opt.random_mask:
-            config.data.params.train.params.random_mask = True
-        config.data.params.validation.params.mvtec_path = opt.mvtec_path
-        config.data.params.validation.target = 'ldm.data.personalized.Personalized_mvtec_encoder'
-        config.data.params.validation.params.set = 'validate'
-    elif opt.spatial_encoder:
-        config.data.params.train.target = 'ldm.data.personalized.PersonalizedBase_json'
-        config.data.params.validation.target = 'ldm.data.personalized.PersonalizedBase_json'
-        #config.data.params.train.params.data_root = opt.data_root + '/train'
-    # data
-    elif opt.test_dataset:
-        config.data.params.train.target = 'ldm.data.personalized.Personalized_mvtec'
-        config.data.params.train.params.sample_name = opt.sample_name
-        config.data.params.train.params.anomaly_name = opt.anomaly_name
+        # add callback which sets up log directory
+        default_callbacks_cfg = {
+            "setup_callback": {
+                "target": "main.SetupCallback",
+                "params": {
+                    "resume": opt.resume,
+                    "now": now,
+                    "logdir": logdir,
+                    "ckptdir": ckptdir,
+                    "cfgdir": cfgdir,
+                    "config": config,
+                    "lightning_config": lightning_config,
+                }
+            },
+            "image_logger": {
+                "target": "main.ImageLogger",
+                "params": {
+                    "batch_frequency": 750,
+                    "max_images": 4,
+                    "clamp": True,
+                    "test_dataset":opt.test_dataset,
+                    "sample_name": opt.sample_name,
+                    "anomaly_name":opt.anomaly_name,
+                    "attention_mask":opt.attention_mask
+                }
+            },
+            "learning_rate_logger": {
+                "target": "main.LearningRateMonitor",
+                "params": {
+                    "logging_interval": "step",
+                    # "log_momentum": True
+                }
+            },
+            "cuda_callback": {
+                "target": "main.CUDACallback"
+            },
+        }
+        if version.parse(pl.__version__) >= version.parse('1.4.0'):
+            default_callbacks_cfg.update({'checkpoint_callback': modelckpt_cfg})
 
-        config.data.params.validation.target = 'ldm.data.personalized.Personalized_mvtec'
-        config.data.params.validation.params.sample_name = opt.sample_name
-        config.data.params.validation.params.anomaly_name = opt.anomaly_name
-    else:
-        config.data.params.train.params.data_root = opt.data_root+'/train'
-        config.data.params.validation.params.data_root = opt.data_root+'/test'
-    #data = instantiate_from_config(config.data)
+        if "callbacks" in lightning_config:
+            callbacks_cfg = lightning_config.callbacks
+        else:
+            callbacks_cfg = OmegaConf.create()
 
-    data = instantiate_from_config(config.data)
-    data.prepare_data()     ## GX: this function calls instantiate_from_config, which initializes the dataset.
-    data.setup()        ## GX: not sure the purpose of this function.
-    print("#### Data #####")
-    for k in data.datasets:
-        print(f"{k}, {data.datasets[k].__class__.__name__}, {len(data.datasets[k])}")
+        if 'metrics_over_trainsteps_checkpoint' in callbacks_cfg:
+            print(
+                'Caution: Saving checkpoints every n train steps without deleting. This might require some free space.')
+            default_metrics_over_trainsteps_ckpt_dict = {
+                'metrics_over_trainsteps_checkpoint':
+                    {"target": 'pytorch_lightning.callbacks.ModelCheckpoint',
+                     'params': {
+                         "dirpath": os.path.join(ckptdir, 'trainstep_checkpoints'),
+                         "filename": "{epoch:06}-{step:09}",
+                         "verbose": True,
+                         'save_top_k': -1,
+                         'every_n_train_steps': 10000,
+                         'save_weights_only': True
+                     }
+                     }
+            }
+            default_callbacks_cfg.update(default_metrics_over_trainsteps_ckpt_dict)
 
-    # configure learning rate
-    bs, base_lr = config.data.params.batch_size, config.model.base_learning_rate
-    if not cpu:
-        ngpu = len(lightning_config.trainer.gpus.strip(",").split(','))
-    else:
-        ngpu = 1
-    if 'accumulate_grad_batches' in lightning_config.trainer:
-        accumulate_grad_batches = lightning_config.trainer.accumulate_grad_batches
-    else:
-        accumulate_grad_batches = 1
-    print(f"accumulate_grad_batches = {accumulate_grad_batches}")
-    lightning_config.trainer.accumulate_grad_batches = accumulate_grad_batches
-    if opt.scale_lr:
-        model.learning_rate = accumulate_grad_batches * ngpu * bs * base_lr
-        print(
-            "Setting learning rate to {:.2e} = {} (accumulate_grad_batches) * {} (num_gpus) * {} (batchsize) * {:.2e} (base_lr)".format(
-                model.learning_rate, accumulate_grad_batches, ngpu, bs, base_lr))
-    else:
-        model.learning_rate = base_lr
-        print("++++ NOT USING LR SCALING ++++")
-        print(f"Setting learning rate to {model.learning_rate:.2e}")
+        callbacks_cfg = OmegaConf.merge(default_callbacks_cfg, callbacks_cfg)
+        if 'ignore_keys_callback' in callbacks_cfg and hasattr(trainer_opt, 'resume_from_checkpoint'):
+            callbacks_cfg.ignore_keys_callback.params['ckpt_path'] = trainer_opt.resume_from_checkpoint
+        elif 'ignore_keys_callback' in callbacks_cfg:
+            del callbacks_cfg['ignore_keys_callback']
+
+        trainer_kwargs["callbacks"] = [instantiate_from_config(callbacks_cfg[k]) for k in callbacks_cfg]
+        trainer_kwargs["max_steps"] = trainer_opt.max_steps
+        trainer = Trainer.from_argparse_args(trainer_opt, **trainer_kwargs)
+        trainer.logdir = logdir  ###
+        if opt.spatial_encoder_embedding:
+            config.data.params.train.params.mvtec_path = opt.mvtec_path
+            config.data.params.train.target = 'ldm.data.personalized.Personalized_mvtec_encoder'
+            config.data.params.train.params.data_enhance=True
+            if opt.random_mask:
+                config.data.params.train.params.random_mask = True
+            config.data.params.validation.params.mvtec_path = opt.mvtec_path
+            config.data.params.validation.target = 'ldm.data.personalized.Personalized_mvtec_encoder'
+            config.data.params.validation.params.set = 'validate'
+        elif opt.spatial_encoder:
+            config.data.params.train.target = 'ldm.data.personalized.PersonalizedBase_json'
+            config.data.params.validation.target = 'ldm.data.personalized.PersonalizedBase_json'
+            #config.data.params.train.params.data_root = opt.data_root + '/train'
+        # data
+        elif opt.test_dataset:
+            config.data.params.train.target = 'ldm.data.personalized.Personalized_mvtec'
+            config.data.params.train.params.sample_name = opt.sample_name
+            config.data.params.train.params.anomaly_name = opt.anomaly_name
+
+            config.data.params.validation.target = 'ldm.data.personalized.Personalized_mvtec'
+            config.data.params.validation.params.sample_name = opt.sample_name
+            config.data.params.validation.params.anomaly_name = opt.anomaly_name
+        else:
+            config.data.params.train.params.data_root = opt.data_root+'/train'
+            config.data.params.validation.params.data_root = opt.data_root+'/test'
+        #data = instantiate_from_config(config.data)
+
+        data = instantiate_from_config(config.data)
+        data.prepare_data()
+        data.setup()
+        print("#### Data #####")
+        for k in data.datasets:
+            print(f"{k}, {data.datasets[k].__class__.__name__}, {len(data.datasets[k])}")
+
+        # configure learning rate
+        bs, base_lr = config.data.params.batch_size, config.model.base_learning_rate
+        if not cpu:
+            ngpu = len(lightning_config.trainer.gpus.strip(",").split(','))
+        else:
+            ngpu = 1
+        if 'accumulate_grad_batches' in lightning_config.trainer:
+            accumulate_grad_batches = lightning_config.trainer.accumulate_grad_batches
+        else:
+            accumulate_grad_batches = 1
+        print(f"accumulate_grad_batches = {accumulate_grad_batches}")
+        lightning_config.trainer.accumulate_grad_batches = accumulate_grad_batches
+        if opt.scale_lr:
+            model.learning_rate = accumulate_grad_batches * ngpu * bs * base_lr
+            print(
+                "Setting learning rate to {:.2e} = {} (accumulate_grad_batches) * {} (num_gpus) * {} (batchsize) * {:.2e} (base_lr)".format(
+                    model.learning_rate, accumulate_grad_batches, ngpu, bs, base_lr))
+        else:
+            model.learning_rate = base_lr
+            print("++++ NOT USING LR SCALING ++++")
+            print(f"Setting learning rate to {model.learning_rate:.2e}")
 
 
-    # allow checkpointing via USR1
-    def melk(*args, **kwargs):
-        # run all checkpoint hooks
+        # allow checkpointing via USR1
+        def melk(*args, **kwargs):
+            # run all checkpoint hooks
+            if trainer.global_rank == 0:
+                print("Summoning checkpoint.")
+                ckpt_path = os.path.join(ckptdir, "last.ckpt")
+                trainer.save_checkpoint(ckpt_path)
+
+
+        def divein(*args, **kwargs):
+            if trainer.global_rank == 0:
+                import pudb;
+                pudb.set_trace()
+
+
+        import signal
+
+        signal.signal(signal.SIGUSR1, melk)
+        signal.signal(signal.SIGUSR2, divein)
+
+        # run
+        if opt.train:
+            try:
+                trainer.fit(model, data)
+            except Exception:
+                melk()
+                raise
+        if not opt.no_test and not trainer.interrupted:
+            trainer.test(model, data)
+    except Exception:
+        if opt.debug and trainer.global_rank == 0:
+            try:
+                import pudb as debugger
+            except ImportError:
+                import pdb as debugger
+            debugger.post_mortem()
+        raise
+    finally:
+        # move newly created debug project to debug_runs
+        if opt.debug and not opt.resume and trainer.global_rank == 0:
+            dst, name = os.path.split(logdir)
+            dst = os.path.join(dst, "debug_runs", name)
+            os.makedirs(os.path.split(dst)[0], exist_ok=True)
+            os.rename(logdir, dst)
         if trainer.global_rank == 0:
-            print("Summoning checkpoint.")
-            ckpt_path = os.path.join(ckptdir, "last.ckpt")
-            trainer.save_checkpoint(ckpt_path)
-
-
-    def divein(*args, **kwargs):
-        if trainer.global_rank == 0:
-            import pudb;
-            pudb.set_trace()
-
-
-    import signal
-
-    signal.signal(signal.SIGUSR1, melk)
-    signal.signal(signal.SIGUSR2, divein)
-
-    # print("begin to run things here...")
-    # print("begin to run things here...")
-    # import sys;sys.exit(0)
-
-    # run
-    if opt.train:
-        trainer.fit(model, data)
-    if not opt.no_test and not trainer.interrupted:
-        trainer.test(model, data)
+            print(trainer.profiler.summary())
