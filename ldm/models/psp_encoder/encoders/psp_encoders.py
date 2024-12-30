@@ -33,7 +33,7 @@ class GradualStyleBlock(Module):
         x = self.linear(x)
         return x
 
-
+## GX: what is this function for?
 class GradualStyleEncoder(Module):
     def __init__(self, num_layers=50, mode='ir', opts=None,text_num=1):
         super(GradualStyleEncoder, self).__init__()

@@ -1,7 +1,4 @@
-### GX: this script is for the debug purpose.
-import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "5"
-import argparse, sys, datetime, glob, importlib, csv
+import argparse, os, sys, datetime, glob, importlib, csv
 import numpy as np
 import time
 import torch
@@ -66,9 +63,9 @@ def get_parser(**parser_kwargs):
     )
     parser.add_argument(
         "--mvtec_path",
-        type=str, default="/user/guoxia11/cvl/anomaly_detection/anomaly_detection_dataset/mvtec",
+        type=str, default=None,
         help="mvtec_path",
-        # required=True
+        required=True
     )
     parser.add_argument(
         "--data_enhance",
@@ -99,7 +96,7 @@ def get_parser(**parser_kwargs):
     )
     parser.add_argument(
         "--spatial_encoder_embedding",
-        action="store_true", default=True,
+        action="store_true", default=False,
         help="whether use ht encoder",
     )
     parser.add_argument(
@@ -112,7 +109,7 @@ def get_parser(**parser_kwargs):
         "--name",
         type=str,
         const=True,
-        default="test",
+        default="",
         nargs="?",
         help="postfix for logdir",
     )
@@ -132,15 +129,14 @@ def get_parser(**parser_kwargs):
         metavar="base_config.yaml",
         help="paths to base configs. Loaded from left-to-right. "
              "Parameters can be overwritten or added with command-line options of the form `--key value`.",
-        # default=list(),
-        default=['/research/cvl-guoxia11/anomaly_detection_v2/anomalydiffusion/configs/latent-diffusion/txt2img-1p4B-finetune-encoder+embedding.yaml']
+        default=list(),
     )
     parser.add_argument(
         "-t",
         "--train",
         type=str2bool,
         const=True,
-        default=True,
+        default=False,
         nargs="?",
         help="train",
     )
@@ -206,8 +202,7 @@ def get_parser(**parser_kwargs):
 
     parser.add_argument("--actual_resume",
                         type=str,
-                        default="/research/cvl-guoxia11/anomaly_detection_v2/AnoGen/DIFFUSION/models/ldm/text2img-large/model.ckpt",
-                        # required=True,
+                        required=True,
                         help="Path to model to actually resume from")
 
     parser.add_argument("--data_root",
@@ -225,23 +220,14 @@ def get_parser(**parser_kwargs):
 
     parser.add_argument("--init_word",
                         type=str,
-                        default='anomaly',
                         help="Word to use as source for initial token embedding")
-
-    # parser.add_argument("--gpus",
-    #                     type=str,
-    #                     default='0,')
 
     return parser
 
 parser = get_parser()
 parser = Trainer.add_argparse_args(parser)
-# parser['gpus'] = '0,' ## GX: I guess gpus is defined in the pytorch-lightning.
-opt, unknown = parser.parse_known_args()
 
-# print(opt)
-# print(opt['gpus'])
-# import sys;sys.exit(0)
+opt, unknown = parser.parse_known_args()
 # import wandb
 # wandb.init(config=opt,
 #            project='anomaly diffusion',
@@ -623,6 +609,7 @@ if __name__ == "__main__":
     cfgdir = os.path.join(logdir, "configs")
     seed_everything(opt.seed)
 
+
     # init and save configs
     configs = [OmegaConf.load(cfg) for cfg in opt.base]
     cli = OmegaConf.from_dotlist(unknown)
@@ -630,17 +617,10 @@ if __name__ == "__main__":
     lightning_config = config.pop("lightning", OmegaConf.create())
     # merge trainer cli with config
     trainer_config = lightning_config.get("trainer", OmegaConf.create())
-
-    # print(opt)
-    # print()
-    # import sys;sys.exit(0)
-    print(trainer_config)
-    print()
     # default to ddp
     trainer_config["accelerator"] = "ddp"
     for k in nondefault_trainer_args(opt):
         trainer_config[k] = getattr(opt, k)
-    trainer_config = {'benchmark': True, 'max_steps': 1000000, 'accelerator': 'ddp', 'gpus': '0,'}
     if not "gpus" in trainer_config:
         del trainer_config["accelerator"]
         cpu = True
@@ -650,9 +630,6 @@ if __name__ == "__main__":
         cpu = False
     trainer_opt = argparse.Namespace(**trainer_config)
     lightning_config.trainer = trainer_config
-    print()
-    print(trainer_config)
-    # import sys;sys.exit(0)
 
     # model
 
@@ -806,36 +783,53 @@ if __name__ == "__main__":
     trainer_kwargs["max_steps"] = trainer_opt.max_steps
     trainer = Trainer.from_argparse_args(trainer_opt, **trainer_kwargs)
     trainer.logdir = logdir  ###
-    if opt.spatial_encoder_embedding:
-        config.data.params.train.params.mvtec_path = opt.mvtec_path
-        config.data.params.train.target = 'ldm.data.personalized.Personalized_mvtec_encoder'
-        config.data.params.train.params.data_enhance=True
-        if opt.random_mask:
-            config.data.params.train.params.random_mask = True
-        config.data.params.validation.params.mvtec_path = opt.mvtec_path
-        config.data.params.validation.target = 'ldm.data.personalized.Personalized_mvtec_encoder'
-        config.data.params.validation.params.set = 'validate'
-    elif opt.spatial_encoder:
-        config.data.params.train.target = 'ldm.data.personalized.PersonalizedBase_json'
-        config.data.params.validation.target = 'ldm.data.personalized.PersonalizedBase_json'
-        #config.data.params.train.params.data_root = opt.data_root + '/train'
-    # data
-    elif opt.test_dataset:
-        config.data.params.train.target = 'ldm.data.personalized.Personalized_mvtec'
-        config.data.params.train.params.sample_name = opt.sample_name
-        config.data.params.train.params.anomaly_name = opt.anomaly_name
 
-        config.data.params.validation.target = 'ldm.data.personalized.Personalized_mvtec'
-        config.data.params.validation.params.sample_name = opt.sample_name
-        config.data.params.validation.params.anomaly_name = opt.anomaly_name
-    else:
-        config.data.params.train.params.data_root = opt.data_root+'/train'
-        config.data.params.validation.params.data_root = opt.data_root+'/test'
-    #data = instantiate_from_config(config.data)
+    # print()
+    # print(opt.spatial_encoder_embedding)    # True
+    # print(opt.spatial_encoder)  # False
+    # print(opt.test_dataset) # False
+    # print(opt.random_mask)
+    # print()
+    # import sys;sys.exit(0)
+    config.data.params.train.params.mvtec_path = opt.mvtec_path
+    config.data.params.train.target = 'ldm.data.personalized.Personalized_mvtec_encoder'
+    config.data.params.train.params.data_enhance=True
+    if opt.random_mask:
+        config.data.params.train.params.random_mask = True
+    config.data.params.validation.params.mvtec_path = opt.mvtec_path
+    config.data.params.validation.target = 'ldm.data.personalized.Personalized_mvtec_encoder'
+    config.data.params.validation.params.set = 'validate'
+
+    # if opt.spatial_encoder_embedding:
+    #     config.data.params.train.params.mvtec_path = opt.mvtec_path
+    #     config.data.params.train.target = 'ldm.data.personalized.Personalized_mvtec_encoder'
+    #     config.data.params.train.params.data_enhance=True
+    #     if opt.random_mask:
+    #         config.data.params.train.params.random_mask = True
+    #     config.data.params.validation.params.mvtec_path = opt.mvtec_path
+    #     config.data.params.validation.target = 'ldm.data.personalized.Personalized_mvtec_encoder'
+    #     config.data.params.validation.params.set = 'validate'
+    # elif opt.spatial_encoder:
+    #     config.data.params.train.target = 'ldm.data.personalized.PersonalizedBase_json'
+    #     config.data.params.validation.target = 'ldm.data.personalized.PersonalizedBase_json'
+    #     #config.data.params.train.params.data_root = opt.data_root + '/train'
+    # # data
+    # elif opt.test_dataset:
+    #     config.data.params.train.target = 'ldm.data.personalized.Personalized_mvtec'
+    #     config.data.params.train.params.sample_name = opt.sample_name
+    #     config.data.params.train.params.anomaly_name = opt.anomaly_name
+
+    #     config.data.params.validation.target = 'ldm.data.personalized.Personalized_mvtec'
+    #     config.data.params.validation.params.sample_name = opt.sample_name
+    #     config.data.params.validation.params.anomaly_name = opt.anomaly_name
+    # else:
+    #     config.data.params.train.params.data_root = opt.data_root+'/train'
+    #     config.data.params.validation.params.data_root = opt.data_root+'/test'
+    # #data = instantiate_from_config(config.data)
 
     data = instantiate_from_config(config.data)
-    data.prepare_data()     ## GX: this function calls instantiate_from_config, which initializes the dataset.
-    data.setup()        ## GX: not sure the purpose of this function.
+    data.prepare_data()
+    data.setup()
     print("#### Data #####")
     for k in data.datasets:
         print(f"{k}, {data.datasets[k].__class__.__name__}, {len(data.datasets[k])}")
@@ -883,12 +877,18 @@ if __name__ == "__main__":
     signal.signal(signal.SIGUSR1, melk)
     signal.signal(signal.SIGUSR2, divein)
 
-    # print("begin to run things here...")
-    # print("begin to run things here...")
+    # print(f"=================================")
+    # for name, param in model.named_parameters():
+    #     if param.requires_grad:
+    #         print(name, param.data.size())
     # import sys;sys.exit(0)
 
     # run
     if opt.train:
-        trainer.fit(model, data)
+        try:
+            trainer.fit(model, data)
+        except Exception:
+            melk()
+            raise
     if not opt.no_test and not trainer.interrupted:
         trainer.test(model, data)

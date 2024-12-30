@@ -78,7 +78,7 @@ class EmbeddingManager(nn.Module):
         print(initializer_words)  # 是一个单词
         if per_image_tokens:
             placeholder_strings.extend(per_img_token_list)
-        name_anomaly_file = 'name-anomaly.txt'
+        name_anomaly_file = '/research/cvl-guoxia11/anomaly_detection_v2/anomalydiffusion/name-anomaly.txt'
         with open(name_anomaly_file,'r') as f:
             sample_anomaly_pairs=f.read().split('\n')
         for name in sample_anomaly_pairs:
@@ -189,7 +189,7 @@ class EmbeddingManager(nn.Module):
     def prepare_spatial_encoder(self,text_num=4):
         self.spatial_encoder = True
         self.spatial_encoder_model = psp_encoders.GradualStyleEncoder(text_num=text_num).cuda()
-
+        ## GX: what is this function for?
     def save(self, ckpt_path):
         torch.save({"string_to_token": self.string_to_token_dict,
                     "string_to_param": self.string_to_param_dict}, ckpt_path)

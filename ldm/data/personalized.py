@@ -155,7 +155,7 @@ class Personalized_mvtec_encoder(Dataset):
             self.data_enhance=random_transform()
         self.data_root=mvtec_path
         sample_anomaly_pairs=[]
-        with open(os.path.join('name-anomaly.txt'),'r') as f:
+        with open(os.path.join('/research/cvl-guoxia11/anomaly_detection_v2/anomalydiffusion/name-anomaly.txt'),'r') as f:
             data=f.read().split('\n')
             for i in data:
                 sample_name,anomaly_name=i.split('+')
@@ -208,6 +208,8 @@ class Personalized_mvtec_encoder(Dataset):
                 mask[mask < 0.5] = 0
                 mask[mask >= 0.5] = 1
                 self.data.append((image,mask,sample_name+'+'+anomaly_name))
+            
+            break   ## GX: debug purpose.
 
         self.num_images = len(self.data)
         self._length = self.num_images
@@ -228,8 +230,6 @@ class Personalized_mvtec_encoder(Dataset):
         else:
             self._length = 4
         self.random_mask=random_mask
-
-
 
     def __len__(self):
         return self._length
@@ -362,15 +362,15 @@ class Positive_sample_with_generated_mask(Dataset):
                  ):
         self.name=sample_name + '+' + anomaly_name
         self.data_root = mvtec_path
-        self.mask_root='./generated_mask'
-        self.img_path=os.path.join(self.data_root,sample_name,'train','good')
-        self.mask_path=os.path.join(self.mask_root,sample_name,anomaly_name)
+        self.mask_root='/research/cvl-guoxia11/anomaly_detection_v2/anomalydiffusion/generated_mask'
+        self.img_path=os.path.join(self.data_root,sample_name,'train','good')   ## GX: '/user/guoxia11/cvl/anomaly_detection/anomaly_detection_dataset/mvtec/bottle/train/good'
+        self.mask_path=os.path.join(self.mask_root,sample_name,anomaly_name)    ## GX: '/research/cvl-guoxia11/anomaly_detection_v2/anomalydiffusion/generated_mask/bottle/broken_small'
         img_files=os.listdir(self.img_path)
         mask_files=os.listdir(self.mask_path)
         # img_files.sort(key=lambda x:int(x[:3]))
         # mask_files.sort(key=lambda x: int(x[:3]))
-        self.img_files=[os.path.join(self.img_path,file_name) for file_name in img_files]
-        self.mask_files=[os.path.join(self.mask_path,file_name) for file_name in mask_files]
+        self.img_files=[os.path.join(self.img_path,file_name) for file_name in img_files]       ## GX: 209
+        self.mask_files=[os.path.join(self.mask_path,file_name) for file_name in mask_files]    ## GX: 504
         self.num_images = len(self.mask_files)
         self._length = self.num_images
 

@@ -123,8 +123,8 @@ class DDIMSampler(object):
                       embedding_manager=None,decoder=None,**kwargs):
         device = self.model.betas.device
         b = shape[0]
-        if x_T is None:
-            img = torch.randn(shape, device=device)
+        if x_T is None: ## GX: goes into this one. this img is a random image.
+            img = torch.randn(shape, device=device) 
         else:
             img = x_T
 
@@ -143,11 +143,11 @@ class DDIMSampler(object):
             index = total_steps - i - 1
             ts = torch.full((b,), step, device=device, dtype=torch.long)
             weight_map=None
-            if mask is not None:
+            if mask is not None:    
                 assert x0 is not None
                 img_orig = self.model.q_sample(x0, ts)  # TODO: deterministic forward pass?
-
-                new_mask = mask
+                ## GX: x0 (original image??): torch.Size([8, 4, 32, 32]); mask: torch.Size([8, 1, 32, 32]); ts: torch.Size([8])
+                new_mask = mask ## GX: img_orig: torch.Size([8, 4, 32, 32])
                 if adaptive_mask:
                     if len(timesteps)==50:
                         dialation = Dilation2d(m=int((ts[0] + 100) * 16// 1000))
@@ -167,7 +167,7 @@ class DDIMSampler(object):
                     for tmpi in range(bs):
                         if dis_map[tmpi].view(-1).sum()==0:
                             weight_map[tmpi,:,:]=1
-                img = img * new_mask + (1 - new_mask) * img_orig
+                img = img * new_mask + (1 - new_mask) * img_orig    ## GX: operation is always on torch.Size([8, 4, 32, 32])...
             outs = self.p_sample_ddim(img, cond, ts, index=index, use_original_steps=ddim_use_original_steps,
                                       quantize_denoised=quantize_denoised, temperature=temperature,
                                       noise_dropout=noise_dropout, score_corrector=score_corrector,

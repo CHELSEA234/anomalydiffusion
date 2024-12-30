@@ -604,7 +604,7 @@ class LatentDiffusion(DDPM):
             raise NotImplementedError(f"encoder_posterior of type '{type(encoder_posterior)}' not yet implemented")
         return self.scale_factor * z
 
-    def get_learned_conditioning(self, c,x=None,name=None):
+    def get_learned_conditioning(self, c,x=None,name=None): ## GX: input c is a list of text.
         position=None
         if self.cond_stage_forward is None:
             if hasattr(self.cond_stage_model, 'encode') and callable(self.cond_stage_model.encode):
@@ -789,8 +789,8 @@ class LatentDiffusion(DDPM):
             if self.use_positional_encodings:
                 pos_x, pos_y = self.compute_latent_shifts(batch)
                 c = {'pos_x': pos_x, 'pos_y': pos_y}
-        out = [z, c,total_dict]
-        if return_first_stage_outputs:#不执行
+        out = [z, c,total_dict]     ## GX: dict_keys(['name', 'mask', 'mask_cond', 'position'])
+        if return_first_stage_outputs:
             xrec = self.decode_first_stage(z)
             out.extend([x, xrec])
         if return_original_cond:#不执行
@@ -975,43 +975,43 @@ class LatentDiffusion(DDPM):
 
     @torch.no_grad()
     def encode_first_stage(self, x):
-        if hasattr(self, "split_input_params"): #不执行
-            if self.split_input_params["patch_distributed_vq"]:
-                ks = self.split_input_params["ks"]  # eg. (128, 128)
-                stride = self.split_input_params["stride"]  # eg. (64, 64)
-                df = self.split_input_params["vqf"]
-                self.split_input_params['original_image_size'] = x.shape[-2:]
-                bs, nc, h, w = x.shape
-                if ks[0] > h or ks[1] > w:
-                    ks = (min(ks[0], h), min(ks[1], w))
-                    print("reducing Kernel")
+        if hasattr(self, "split_input_params"): pass #不执行
+            # if self.split_input_params["patch_distributed_vq"]:
+            #     ks = self.split_input_params["ks"]  # eg. (128, 128)
+            #     stride = self.split_input_params["stride"]  # eg. (64, 64)
+            #     df = self.split_input_params["vqf"]
+            #     self.split_input_params['original_image_size'] = x.shape[-2:]
+            #     bs, nc, h, w = x.shape
+            #     if ks[0] > h or ks[1] > w:
+            #         ks = (min(ks[0], h), min(ks[1], w))
+            #         print("reducing Kernel")
 
-                if stride[0] > h or stride[1] > w:
-                    stride = (min(stride[0], h), min(stride[1], w))
-                    print("reducing stride")
+            #     if stride[0] > h or stride[1] > w:
+            #         stride = (min(stride[0], h), min(stride[1], w))
+            #         print("reducing stride")
 
-                fold, unfold, normalization, weighting = self.get_fold_unfold(x, ks, stride, df=df)
-                z = unfold(x)  # (bn, nc * prod(**ks), L)
-                # Reshape to img shape
-                z = z.view((z.shape[0], -1, ks[0], ks[1], z.shape[-1]))  # (bn, nc, ks[0], ks[1], L )
+            #     fold, unfold, normalization, weighting = self.get_fold_unfold(x, ks, stride, df=df)
+            #     z = unfold(x)  # (bn, nc * prod(**ks), L)
+            #     # Reshape to img shape
+            #     z = z.view((z.shape[0], -1, ks[0], ks[1], z.shape[-1]))  # (bn, nc, ks[0], ks[1], L )
 
-                output_list = [self.first_stage_model.encode(z[:, :, :, :, i])
-                               for i in range(z.shape[-1])]
+            #     output_list = [self.first_stage_model.encode(z[:, :, :, :, i])
+            #                    for i in range(z.shape[-1])]
 
-                o = torch.stack(output_list, axis=-1)
-                o = o * weighting
+            #     o = torch.stack(output_list, axis=-1)
+            #     o = o * weighting
 
-                # Reverse reshape to img shape
-                o = o.view((o.shape[0], -1, o.shape[-1]))  # (bn, nc * ks[0] * ks[1], L)
-                # stitch crops together
-                decoded = fold(o)
-                decoded = decoded / normalization
-                return decoded
+            #     # Reverse reshape to img shape
+            #     o = o.view((o.shape[0], -1, o.shape[-1]))  # (bn, nc * ks[0] * ks[1], L)
+            #     # stitch crops together
+            #     decoded = fold(o)
+            #     decoded = decoded / normalization
+            #     return decoded
 
-            else:
-                return self.first_stage_model.encode(x)
+            # else:
+            #     return self.first_stage_model.encode(x)
         else: #执行这个
-            return self.first_stage_model.encode(x)
+            return self.first_stage_model.encode(x) ## GX: self.first_stage_model is an AutoencoderKL (ldm/models/autoencoders.py)
 
     def shared_step(self, batch, **kwargs):
         x, c,total_dict = self.get_input(batch, self.first_stage_key)
@@ -1023,7 +1023,7 @@ class LatentDiffusion(DDPM):
         if self.model.conditioning_key is not None: #执行
             assert c is not None
             if self.cond_stage_trainable:#执行
-                c,_ = self.get_learned_conditioning(c,x=mask_cond,name=name)
+                c,_ = self.get_learned_conditioning(c,x=mask_cond,name=name)    ## GX: output c is torch.Size([4, 77, 1280])
             if self.shorten_cond_schedule:  # TODO: drop this option 不执行
                 tc = self.cond_ids[t].to(self.device)
                 c = self.q_sample(x_start=c, t=tc, noise=torch.randn_like(c.float()))
@@ -1052,87 +1052,87 @@ class LatentDiffusion(DDPM):
 
         if hasattr(self, "split_input_params"):#不执行
             assert len(cond) == 1  # todo can only deal with one conditioning atm
-            assert not return_ids  
-            ks = self.split_input_params["ks"]  # eg. (128, 128)
-            stride = self.split_input_params["stride"]  # eg. (64, 64)
+            # assert not return_ids  
+            # ks = self.split_input_params["ks"]  # eg. (128, 128)
+            # stride = self.split_input_params["stride"]  # eg. (64, 64)
 
-            h, w = x_noisy.shape[-2:]
+            # h, w = x_noisy.shape[-2:]
 
-            fold, unfold, normalization, weighting = self.get_fold_unfold(x_noisy, ks, stride)
+            # fold, unfold, normalization, weighting = self.get_fold_unfold(x_noisy, ks, stride)
 
-            z = unfold(x_noisy)  # (bn, nc * prod(**ks), L)
-            # Reshape to img shape
-            z = z.view((z.shape[0], -1, ks[0], ks[1], z.shape[-1]))  # (bn, nc, ks[0], ks[1], L )
-            z_list = [z[:, :, :, :, i] for i in range(z.shape[-1])]
+            # z = unfold(x_noisy)  # (bn, nc * prod(**ks), L)
+            # # Reshape to img shape
+            # z = z.view((z.shape[0], -1, ks[0], ks[1], z.shape[-1]))  # (bn, nc, ks[0], ks[1], L )
+            # z_list = [z[:, :, :, :, i] for i in range(z.shape[-1])]
 
-            if self.cond_stage_key in ["image", "LR_image", "segmentation",
-                                       'bbox_img'] and self.model.conditioning_key:  # todo check for completeness
-                c_key = next(iter(cond.keys()))  # get key
-                c = next(iter(cond.values()))  # get value
-                assert (len(c) == 1)  # todo extend to list with more than one elem
-                c = c[0]  # get element
+            # if self.cond_stage_key in ["image", "LR_image", "segmentation",
+            #                            'bbox_img'] and self.model.conditioning_key:  # todo check for completeness
+            #     c_key = next(iter(cond.keys()))  # get key
+            #     c = next(iter(cond.values()))  # get value
+            #     assert (len(c) == 1)  # todo extend to list with more than one elem
+            #     c = c[0]  # get element
 
-                c = unfold(c)
-                c = c.view((c.shape[0], -1, ks[0], ks[1], c.shape[-1]))  # (bn, nc, ks[0], ks[1], L )
+            #     c = unfold(c)
+            #     c = c.view((c.shape[0], -1, ks[0], ks[1], c.shape[-1]))  # (bn, nc, ks[0], ks[1], L )
 
-                cond_list = [{c_key: [c[:, :, :, :, i]]} for i in range(c.shape[-1])]
+            #     cond_list = [{c_key: [c[:, :, :, :, i]]} for i in range(c.shape[-1])]
 
-            elif self.cond_stage_key == 'coordinates_bbox':
-                assert 'original_image_size' in self.split_input_params, 'BoudingBoxRescaling is missing original_image_size'
+            # elif self.cond_stage_key == 'coordinates_bbox':
+            #     assert 'original_image_size' in self.split_input_params, 'BoudingBoxRescaling is missing original_image_size'
 
-                # assuming padding of unfold is always 0 and its dilation is always 1
-                n_patches_per_row = int((w - ks[0]) / stride[0] + 1)
-                full_img_h, full_img_w = self.split_input_params['original_image_size']
-                # as we are operating on latents, we need the factor from the original image size to the
-                # spatial latent size to properly rescale the crops for regenerating the bbox annotations
-                num_downs = self.first_stage_model.encoder.num_resolutions - 1
-                rescale_latent = 2 ** (num_downs)
+            #     # assuming padding of unfold is always 0 and its dilation is always 1
+            #     n_patches_per_row = int((w - ks[0]) / stride[0] + 1)
+            #     full_img_h, full_img_w = self.split_input_params['original_image_size']
+            #     # as we are operating on latents, we need the factor from the original image size to the
+            #     # spatial latent size to properly rescale the crops for regenerating the bbox annotations
+            #     num_downs = self.first_stage_model.encoder.num_resolutions - 1
+            #     rescale_latent = 2 ** (num_downs)
 
-                # get top left postions of patches as conforming for the bbbox tokenizer, therefore we
-                # need to rescale the tl patch coordinates to be in between (0,1)
-                tl_patch_coordinates = [(rescale_latent * stride[0] * (patch_nr % n_patches_per_row) / full_img_w,
-                                         rescale_latent * stride[1] * (patch_nr // n_patches_per_row) / full_img_h)
-                                        for patch_nr in range(z.shape[-1])]
+            #     # get top left postions of patches as conforming for the bbbox tokenizer, therefore we
+            #     # need to rescale the tl patch coordinates to be in between (0,1)
+            #     tl_patch_coordinates = [(rescale_latent * stride[0] * (patch_nr % n_patches_per_row) / full_img_w,
+            #                              rescale_latent * stride[1] * (patch_nr // n_patches_per_row) / full_img_h)
+            #                             for patch_nr in range(z.shape[-1])]
 
-                # patch_limits are tl_coord, width and height coordinates as (x_tl, y_tl, h, w)
-                patch_limits = [(x_tl, y_tl,
-                                 rescale_latent * ks[0] / full_img_w,
-                                 rescale_latent * ks[1] / full_img_h) for x_tl, y_tl in tl_patch_coordinates]
-                # patch_values = [(np.arange(x_tl,min(x_tl+ks, 1.)),np.arange(y_tl,min(y_tl+ks, 1.))) for x_tl, y_tl in tl_patch_coordinates]
+            #     # patch_limits are tl_coord, width and height coordinates as (x_tl, y_tl, h, w)
+            #     patch_limits = [(x_tl, y_tl,
+            #                      rescale_latent * ks[0] / full_img_w,
+            #                      rescale_latent * ks[1] / full_img_h) for x_tl, y_tl in tl_patch_coordinates]
+            #     # patch_values = [(np.arange(x_tl,min(x_tl+ks, 1.)),np.arange(y_tl,min(y_tl+ks, 1.))) for x_tl, y_tl in tl_patch_coordinates]
 
-                # tokenize crop coordinates for the bounding boxes of the respective patches
-                patch_limits_tknzd = [torch.LongTensor(self.bbox_tokenizer._crop_encoder(bbox))[None].to(self.device)
-                                      for bbox in patch_limits]  # list of length l with tensors of shape (1, 2)
-                print(patch_limits_tknzd[0].shape)
-                # cut tknzd crop position from conditioning
-                assert isinstance(cond, dict), 'cond must be dict to be fed into model'
-                cut_cond = cond['c_crossattn'][0][..., :-2].to(self.device)
-                print(cut_cond.shape)
+            #     # tokenize crop coordinates for the bounding boxes of the respective patches
+            #     patch_limits_tknzd = [torch.LongTensor(self.bbox_tokenizer._crop_encoder(bbox))[None].to(self.device)
+            #                           for bbox in patch_limits]  # list of length l with tensors of shape (1, 2)
+            #     print(patch_limits_tknzd[0].shape)
+            #     # cut tknzd crop position from conditioning
+            #     assert isinstance(cond, dict), 'cond must be dict to be fed into model'
+            #     cut_cond = cond['c_crossattn'][0][..., :-2].to(self.device)
+            #     print(cut_cond.shape)
 
-                adapted_cond = torch.stack([torch.cat([cut_cond, p], dim=1) for p in patch_limits_tknzd])
-                adapted_cond = rearrange(adapted_cond, 'l b n -> (l b) n')
-                print(adapted_cond.shape)
-                adapted_cond,_ = self.get_learned_conditioning(adapted_cond)
-                print(adapted_cond.shape)
-                adapted_cond = rearrange(adapted_cond, '(l b) n d -> l b n d', l=z.shape[-1])
-                print(adapted_cond.shape)
+            #     adapted_cond = torch.stack([torch.cat([cut_cond, p], dim=1) for p in patch_limits_tknzd])
+            #     adapted_cond = rearrange(adapted_cond, 'l b n -> (l b) n')
+            #     print(adapted_cond.shape)
+            #     adapted_cond,_ = self.get_learned_conditioning(adapted_cond)
+            #     print(adapted_cond.shape)
+            #     adapted_cond = rearrange(adapted_cond, '(l b) n d -> l b n d', l=z.shape[-1])
+            #     print(adapted_cond.shape)
 
-                cond_list = [{'c_crossattn': [e]} for e in adapted_cond]
+            #     cond_list = [{'c_crossattn': [e]} for e in adapted_cond]
 
-            else:
-                cond_list = [cond for i in range(z.shape[-1])]  # Todo make this more efficient
+            # else:
+            #     cond_list = [cond for i in range(z.shape[-1])]  # Todo make this more efficient
 
-            # apply model by loop over crops
-            output_list = [self.model(z_list[i], t, **cond_list[i]) for i in range(z.shape[-1])]
-            assert not isinstance(output_list[0],
-                                  tuple)  # todo cant deal with multiple model outputs check this never happens
+            # # apply model by loop over crops
+            # output_list = [self.model(z_list[i], t, **cond_list[i]) for i in range(z.shape[-1])]
+            # assert not isinstance(output_list[0],
+            #                       tuple)  # todo cant deal with multiple model outputs check this never happens
 
-            o = torch.stack(output_list, axis=-1)
-            o = o * weighting
-            # Reverse reshape to img shape
-            o = o.view((o.shape[0], -1, o.shape[-1]))  # (bn, nc * ks[0] * ks[1], L)
-            # stitch crops together
-            x_recon = fold(o) / normalization
+            # o = torch.stack(output_list, axis=-1)
+            # o = o * weighting
+            # # Reverse reshape to img shape
+            # o = o.view((o.shape[0], -1, o.shape[-1]))  # (bn, nc * ks[0] * ks[1], L)
+            # # stitch crops together
+            # x_recon = fold(o) / normalization
 
         else:#执行这个
             x_recon = self.model(x_noisy, t, **cond,mask=mask,weight_map=weight_map,**kwargs)
@@ -1162,7 +1162,7 @@ class LatentDiffusion(DDPM):
 
     def p_losses(self, x_start, cond, t,mask=None, noise=None):
         noise = default(noise, lambda: torch.randn_like(x_start))
-        if mask is not None:
+        if mask is not None:    ## GX: why would put a mask in the forwarding process?
             #mask=mask.unsqueeze(1)
             reisze_32=transforms.Resize((32,32))
             mask=reisze_32(mask)
@@ -1425,8 +1425,8 @@ class LatentDiffusion(DDPM):
                    quantize_denoised=True, inpaint=True, plot_denoise_rows=False, plot_progressive_rows=False,
                    plot_diffusion_rows=False,adaptive_mask=False, **kwargs):
         use_ddim = ddim_steps is not None
-        log = dict()
-        z, c,total_dict, x, xrec, xc = self.get_input(batch, self.first_stage_key,
+        log = dict()    ## z: torch.Size([8, 4, 32, 32]); c: torch.Size([8, 77, 1280]); total_dict: dict_keys(['name', 'mask', 'mask_cond', 'position'])
+        z, c,total_dict, x, xrec, xc = self.get_input(batch, self.first_stage_key,  ## GX: x/xrec: torch.Size([8, 3, 256, 256]); xc is a list of textual captions.
                                            return_first_stage_outputs=True,
                                            force_c_encode=True,
                                            return_original_cond=True,
@@ -1458,7 +1458,7 @@ class LatentDiffusion(DDPM):
             if ismap(xc):
                 log["original_conditioning"] = self.to_rgb(xc)
 
-        if plot_diffusion_rows:
+        if plot_diffusion_rows: ## skip.
             # get diffusion row
             diffusion_row = list()
             z_start = z[:n_row]
@@ -1476,7 +1476,7 @@ class LatentDiffusion(DDPM):
             diffusion_grid = make_grid(diffusion_grid, nrow=diffusion_row.shape[0])
             log["diffusion_row"] = diffusion_grid
 
-        if sample:
+        if sample:  ## skip.
             # get denoise row
             if not unconditional_only:
                 with self.ema_scope("Plotting"):
@@ -1515,7 +1515,7 @@ class LatentDiffusion(DDPM):
             # make a simple center square
             b, h, w = z.shape[0], z.shape[2], z.shape[3]
 
-            with self.ema_scope("Plotting Inpaint"):
+            with self.ema_scope("Plotting Inpaint"):    ## adaptive_mask: True; mask: torch.Size([8, 1, 32, 32])
                 samples, z_denoise_row = self.sample_log(cond=c,batch_size=N,ddim=use_ddim, eta=ddim_eta,ddim_steps=ddim_steps,
                                                              x0=z[:N], mask=mask,embedding_position=total_dict['position'],adaptive_mask=adaptive_mask,
                                                              embedding_manager=self.cond_stage_model,decoder=self.decode_first_stage)
@@ -1528,7 +1528,7 @@ class LatentDiffusion(DDPM):
                 #                             ddim_steps=ddim_steps, x0=z[:N], mask=mask,adaptive_mask=adaptive_mask)
             #samples=samples*mask+(1-mask)*z[:N]
             x_samples = self.decode_first_stage(samples.to(self.device),)
-
+            ## GX: samples and z: torch.Size([8, 4, 32, 32]) and torch.Size([8, 4, 32, 32])
             log["samples_inpainting"] = x_samples
             # log["mask"] = mask
 
@@ -1597,6 +1597,12 @@ class LatentDiffusion(DDPM):
                 params.append(self.logvar)
 
                 opt = torch.optim.AdamW(params, lr=lr)
+        # print(f"..................................................")
+        # for name, param in self.embedding_manager.named_parameters():
+        #     if param.requires_grad:
+        #         print (name, param.data.size())
+        # print("...over...")
+        # import sys;sys.exit(0)
 
         return opt
 
@@ -1669,7 +1675,7 @@ class LatentDiffusion(DDPM):
             x_samples = self.decode_first_stage(z.to(self.device))
             save_image(x_samples,'generated_dataset/tmp/0-%d.jpg'%i,normalize=True)
         exit()
-class DiffusionWrapper(pl.LightningModule):
+class DiffusionWrapper(pl.LightningModule): ## GX: handle different types of conditioning mechanisms. 
     def __init__(self, diff_model_config, conditioning_key):
         super().__init__()
         self.diffusion_model = instantiate_from_config(diff_model_config)
