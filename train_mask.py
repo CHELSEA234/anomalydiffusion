@@ -1,4 +1,6 @@
 ### GX: this is the debug process of generating the mask.
+import os
+os.environ["CUDA_VISIBLE_DEVICES"]='7'
 import argparse, os, sys, datetime, glob, importlib, csv
 import numpy as np
 import time
@@ -73,13 +75,13 @@ def get_parser(**parser_kwargs):
     parser.add_argument(
         "--sample_name",
         type=str,
-        default='',
+        default='bottle',
         help="whether use ht encoder",
     )
     parser.add_argument(
         "--anomaly_name",
         type=str,
-        default='',
+        default='broken_small',
         help="whether use ht encoder",
     )
     parser.add_argument(
@@ -122,7 +124,8 @@ def get_parser(**parser_kwargs):
         metavar="base_config.yaml",
         help="paths to base configs. Loaded from left-to-right. "
              "Parameters can be overwritten or added with command-line options of the form `--key value`.",
-        default=list(),
+        # default=list(),
+        default=['/research/cvl-guoxia11/anomaly_detection_v2/anomalydiffusion/configs/latent-diffusion/txt2img-1p4B-finetune.yaml']
     )
     parser.add_argument(
         "-t",
@@ -195,13 +198,14 @@ def get_parser(**parser_kwargs):
 
     parser.add_argument("--actual_resume",
                         type=str,
-                        required=True,
+                        # required=True,
+                        default='/research/cvl-guoxia11/anomaly_detection_v2/AnoGen/DIFFUSION/models/ldm/text2img-large/model.ckpt',
                         help="Path to model to actually resume from")
 
     parser.add_argument("--data_root",
                         type=str,
                         default='test-imgs/hazelnut',
-                        required=False,
+                        # required=False,
                         help="Path to directory with training images")
 
     parser.add_argument("--embedding_manager_ckpt",
@@ -215,9 +219,10 @@ def get_parser(**parser_kwargs):
 
     parser.add_argument("--init_word",
                         type=str,
+                        default='crack',
                         help="Word to use as source for initial token embedding")
     parser.add_argument("--mvtec_path",
-                        type=str,
+                        type=str,  default="/user/guoxia11/cvl/anomaly_detection/anomaly_detection_dataset/mvtec",
                         help="Path to mvtec")
     return parser
 
@@ -553,7 +558,7 @@ if __name__ == "__main__":
 
     parser = get_parser()
     parser = Trainer.add_argparse_args(parser)
-
+    
     opt, unknown = parser.parse_known_args()
     if opt.name and opt.resume:
         raise ValueError(
@@ -617,6 +622,7 @@ if __name__ == "__main__":
     trainer_config["accelerator"] = "ddp"
     for k in nondefault_trainer_args(opt):
         trainer_config[k] = getattr(opt, k)
+    trainer_config = {'benchmark': True, 'max_steps': 1000000, 'accelerator': 'ddp', 'gpus': '0,'}
     if not "gpus" in trainer_config:
         del trainer_config["accelerator"]
         cpu = True
@@ -782,6 +788,7 @@ if __name__ == "__main__":
     trainer = Trainer.from_argparse_args(trainer_opt, **trainer_kwargs)
     trainer.logdir = logdir  ###
 
+    print(f"the old train target: ", config.data.params.train.target)
     config.data.params.train.target = 'ldm.data.personalized.Personalized_mvtec_mask'
     config.data.params.train.params.mvtec_path = opt.mvtec_path
     config.data.params.train.params.sample_name = opt.sample_name
@@ -793,6 +800,8 @@ if __name__ == "__main__":
     config.data.params.validation.params.anomaly_name = opt.anomaly_name
     config.data.params.validation.params.train_on_visa = opt.train_on_visa
     #data = instantiate_from_config(config.data)
+    print(f"the new train target: ", config.data.params.train.target)
+    # import sys;sys.exit(0)
 
     data = instantiate_from_config(config.data)
     # NOTE according to https://pytorch-lightning.readthedocs.io/en/latest/datamodules.html
@@ -854,12 +863,19 @@ if __name__ == "__main__":
 
     # import sys;sys.exit(0)
 
+    # print(f"comes to this place...")
+    # print(f"comes to this place...")
+    # import sys;sys.exit(0)
+
     # run
-    if opt.train:
-        try:
-            trainer.fit(model, data)
-        except Exception:
-            melk()
-            raise
-    if not opt.no_test and not trainer.interrupted:
-        trainer.test(model, data)
+    trainer.fit(model, data)
+    print("...over...")
+    import sys;sys.exit(0)
+    # if opt.train:
+    #     try:
+    #         trainer.fit(model, data)
+    #     except Exception:
+    #         melk()
+    #         raise
+    # if not opt.no_test and not trainer.interrupted:
+    #     trainer.test(model, data)

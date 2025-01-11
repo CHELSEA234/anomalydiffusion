@@ -117,11 +117,17 @@ class EmbeddingManager(nn.Module):
         #     from torchvision.utils import save_image
         #     print(img.shape,img.min(),img.max())
         #     save_image(img,'tmp.jpg',nrow=4)
-        for placeholder_string, placeholder_token in self.string_to_token_dict.items():  # 只有一次，self.string_to_token_dict.items()只有*
+        for placeholder_string, placeholder_token in self.string_to_token_dict.items():  # GX: 只有一次，self.string_to_token_dict.items()只有*
             placeholder_embedding=[]
-            for i in name:
-                placeholder_embedding.append(self.string_to_param_dict[i])
-            placeholder_embedding=torch.stack(placeholder_embedding,dim=0)
+            # print("$$$$$$$$$$$$$")
+            # print(name)
+            # print("$$$$$$$$$$$$$")
+            # print(self.string_to_param_dict)
+            # import sys;sys.exit(0)
+            if name is not None:
+                for i in name:
+                    placeholder_embedding.append(self.string_to_param_dict[i])  ## GX: self.string_to_param_dict has all [sample-name]-[anomaly-type], each is 4*1280.
+                placeholder_embedding=torch.stack(placeholder_embedding,dim=0)  ## GX: placeholder_embedding: torch.Size([4, 4, 1280])
             if self.max_vectors_per_token == 1:  # If there's only one vector per token, we can do a simple replacement
                 placeholder_idx = torch.where(tokenized_text == placeholder_token.to(device))
                 if self.spatial_encoder and img is not None:
@@ -133,10 +139,10 @@ class EmbeddingManager(nn.Module):
                     self.progressive_counter += 1
                     max_step_tokens = 1 + self.progressive_counter // PROGRESSIVE_SCALE
                 else:  # 执行这个
-                    max_step_tokens = self.max_vectors_per_token
-                if self.spatial_encoder and img is not None:
-                    placeholder_embedding2 = self.spatial_encoder_model(img)
-                    placeholder_embedding= torch.cat([placeholder_embedding,placeholder_embedding2],dim=1)
+                    max_step_tokens = self.max_vectors_per_token    ## GX: 4; define when initializing the class.
+                if self.spatial_encoder and (img is not None) and (name is not None):
+                    placeholder_embedding2 = self.spatial_encoder_model(img)    ## GX: torch.Size([4, 1, 256, 256]) ==> torch.Size([4, 4, 1280])
+                    placeholder_embedding= torch.cat([placeholder_embedding,placeholder_embedding2],dim=1)  ## placeholder_embedding: torch.Size([4, 8, 1280])
                     num_vectors_for_token = placeholder_embedding.shape[1]
                     # num_vectors_for_token = min(placeholder_embedding.shape[1], max_step_tokens)
                     #print(num_vectors_for_token)
@@ -162,6 +168,11 @@ class EmbeddingManager(nn.Module):
                         tokenized_text[row] = new_token_row
                         position[row][0]=col
                         position[row][1]=col+num_vectors_for_token
+
+                elif name is None:
+                    position = None
+                    continue
+
                 else:
                     num_vectors_for_token = min(placeholder_embedding.shape[0], max_step_tokens)
 
@@ -185,11 +196,14 @@ class EmbeddingManager(nn.Module):
 
                         embedded_text[row] = new_embed_row
                         tokenized_text[row] = new_token_row
+
         return embedded_text,position
+
     def prepare_spatial_encoder(self,text_num=4):
         self.spatial_encoder = True
         self.spatial_encoder_model = psp_encoders.GradualStyleEncoder(text_num=text_num).cuda()
         ## GX: what is this function for?
+
     def save(self, ckpt_path):
         torch.save({"string_to_token": self.string_to_token_dict,
                     "string_to_param": self.string_to_param_dict}, ckpt_path)

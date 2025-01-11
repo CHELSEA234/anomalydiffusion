@@ -1,7 +1,7 @@
-### GX: this script is for the debug purpose.
+### GX: this is the debug process of generating the mask.
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
-import argparse, sys, datetime, glob, importlib, csv
+os.environ["CUDA_VISIBLE_DEVICES"]='7'
+import argparse, os, sys, datetime, glob, importlib, csv
 import numpy as np
 import time
 import torch
@@ -60,21 +60,13 @@ def get_parser(**parser_kwargs):
         help="whether use ht encoder",
     )
     parser.add_argument(
-        "--random_mask",
-        action="store_true", default=False,
-        help="whether use ht encoder",
-    )
-    parser.add_argument(
-        "--mvtec_path",
-        type=str, default="/user/guoxia11/cvl/anomaly_detection/anomaly_detection_dataset/mvtec",
-        help="mvtec_path",
-        # required=True
-    )
-    parser.add_argument(
         "--data_enhance",
         action="store_true", default=False,
         help="whether use ht encoder",
     )
+    parser.add_argument("--train_on_visa",
+                        action="store_true", default=False,
+                        help="Word to use as source for initial token embedding")
     parser.add_argument(
         "--attention_mask",
         action="store_true", default=False,
@@ -83,13 +75,13 @@ def get_parser(**parser_kwargs):
     parser.add_argument(
         "--sample_name",
         type=str,
-        default='',
+        default='bottle',
         help="whether use ht encoder",
     )
     parser.add_argument(
         "--anomaly_name",
         type=str,
-        default='',
+        default='broken_small',
         help="whether use ht encoder",
     )
     parser.add_argument(
@@ -99,7 +91,7 @@ def get_parser(**parser_kwargs):
     )
     parser.add_argument(
         "--spatial_encoder_embedding",
-        action="store_true", default=True,
+        action="store_true", default=False,
         help="whether use ht encoder",
     )
     parser.add_argument(
@@ -112,7 +104,7 @@ def get_parser(**parser_kwargs):
         "--name",
         type=str,
         const=True,
-        default="test",
+        default="",
         nargs="?",
         help="postfix for logdir",
     )
@@ -133,14 +125,14 @@ def get_parser(**parser_kwargs):
         help="paths to base configs. Loaded from left-to-right. "
              "Parameters can be overwritten or added with command-line options of the form `--key value`.",
         # default=list(),
-        default=['/research/cvl-guoxia11/anomaly_detection_v2/anomalydiffusion/configs/latent-diffusion/txt2img-1p4B-finetune-encoder+embedding.yaml']
+        default=['/research/cvl-guoxia11/anomaly_detection_v2/anomalydiffusion/configs/latent-diffusion/txt2img-1p4B-finetune.yaml']
     )
     parser.add_argument(
         "-t",
         "--train",
         type=str2bool,
         const=True,
-        default=True,
+        default=False,
         nargs="?",
         help="train",
     )
@@ -206,12 +198,14 @@ def get_parser(**parser_kwargs):
 
     parser.add_argument("--actual_resume",
                         type=str,
-                        default="/research/cvl-guoxia11/anomaly_detection_v2/AnoGen/DIFFUSION/models/ldm/text2img-large/model.ckpt",
                         # required=True,
+                        default='/research/cvl-guoxia11/anomaly_detection_v2/AnoGen/DIFFUSION/models/ldm/text2img-large/model.ckpt',
                         help="Path to model to actually resume from")
 
     parser.add_argument("--data_root",
                         type=str,
+                        default='test-imgs/hazelnut',
+                        # required=False,
                         help="Path to directory with training images")
 
     parser.add_argument("--embedding_manager_ckpt",
@@ -225,28 +219,14 @@ def get_parser(**parser_kwargs):
 
     parser.add_argument("--init_word",
                         type=str,
-                        default='anomaly',
+                        default='crack',
                         help="Word to use as source for initial token embedding")
-
-    # parser.add_argument("--gpus",
-    #                     type=str,
-    #                     default='0,')
-
+    parser.add_argument("--mvtec_path",
+                        type=str,  default="/user/guoxia11/cvl/anomaly_detection/anomaly_detection_dataset/mvtec",
+                        help="Path to mvtec")
     return parser
 
-parser = get_parser()
-parser = Trainer.add_argparse_args(parser)
-# parser['gpus'] = '0,' ## GX: I guess gpus is defined in the pytorch-lightning.
-opt, unknown = parser.parse_known_args()
 
-# print(opt)
-# print(opt['gpus'])
-# import sys;sys.exit(0)
-# import wandb
-# wandb.init(config=opt,
-#            project='anomaly diffusion',
-#            name='anomaly diffusion',
-#             reinit = True)
 def nondefault_trainer_args(opt):
     parser = argparse.ArgumentParser()
     parser = Trainer.add_argparse_args(parser)
@@ -434,8 +414,8 @@ class ImageLogger(Callback):
         self.log_on_batch_idx = log_on_batch_idx
         self.log_images_kwargs = log_images_kwargs if log_images_kwargs else {}
         self.log_first_step = log_first_step
-        self.log_images_kwargs['inpaint'] = True
-        self.log_images_kwargs['sample'] = False
+        self.log_images_kwargs['inpaint'] = False
+        self.log_images_kwargs['sample']=True
     @rank_zero_only
     def _testtube(self, pl_module, images, batch_idx, split):
         for k in images:
@@ -470,7 +450,6 @@ class ImageLogger(Callback):
             os.makedirs(os.path.split(path)[0], exist_ok=True)
             Image.fromarray(grid).save(path)
 
-            #wandb.log({"%s"%k: wandb.Image(str(path))}, step= batch_idx)
     def log_img(self, pl_module, batch, batch_idx, split="train"):
         check_idx = batch_idx if self.log_on_batch_idx else pl_module.global_step
         # print(check_idx,self.batch_freq,split)
@@ -568,8 +547,8 @@ class ModeSwapCallback(Callback):
             self.is_frozen = False
             trainer.optimizers = [pl_module.configure_opt_model()]
 
-if __name__ == "__main__":
 
+if __name__ == "__main__":
     now = datetime.datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
 
     # add cwd for convenience and to make classes in this file available when
@@ -577,7 +556,10 @@ if __name__ == "__main__":
     # (in particular `main.DataModuleFromConfig`)
     sys.path.append(os.getcwd())
 
-
+    parser = get_parser()
+    parser = Trainer.add_argparse_args(parser)
+    
+    opt, unknown = parser.parse_known_args()
     if opt.name and opt.resume:
         raise ValueError(
             "-n/--name and -r/--resume cannot be specified both."
@@ -613,12 +595,18 @@ if __name__ == "__main__":
         else:
             name = ""
 
-        # if opt.datadir_in_name:
-        #     now = os.path.basename(os.path.normpath(opt.data_root)) + now
-
+        if opt.datadir_in_name:
+            now = os.path.basename(os.path.normpath(opt.data_root)) + now
+        # print(now,name,opt.postfix)
         nowname = now + name + opt.postfix
-        logdir = os.path.join(opt.logdir, nowname)
-    logdir=os.path.join(opt.logdir, 'anomaly-checkpoints')
+        # logdir = os.path.join(opt.logdir, nowname)
+        logdir=os.path.join(opt.logdir,'mask-checkpoints/%s-%s'%(opt.sample_name,opt.anomaly_name))
+        # print(logdir)
+        # import sys;sys.exit(0)
+        # if os.path.exists(logdir):
+        #     print('dir_exists!')
+        #     exit()
+
     ckptdir = os.path.join(logdir, "checkpoints")
     cfgdir = os.path.join(logdir, "configs")
     seed_everything(opt.seed)
@@ -630,12 +618,6 @@ if __name__ == "__main__":
     lightning_config = config.pop("lightning", OmegaConf.create())
     # merge trainer cli with config
     trainer_config = lightning_config.get("trainer", OmegaConf.create())
-
-    # print(opt)
-    # print()
-    # import sys;sys.exit(0)
-    print(trainer_config)
-    print()
     # default to ddp
     trainer_config["accelerator"] = "ddp"
     for k in nondefault_trainer_args(opt):
@@ -650,9 +632,6 @@ if __name__ == "__main__":
         cpu = False
     trainer_opt = argparse.Namespace(**trainer_config)
     lightning_config.trainer = trainer_config
-    print()
-    print(trainer_config)
-    # import sys;sys.exit(0)
 
     # model
 
@@ -663,6 +642,7 @@ if __name__ == "__main__":
 
     if opt.init_word:
         config.model.params.personalization_config.params.initializer_words[0] = opt.init_word
+
     if opt.actual_resume:
         model = load_model_from_config(config, opt.actual_resume)
     else:
@@ -748,7 +728,7 @@ if __name__ == "__main__":
             }
         },
         "image_logger": {
-            "target": "main.ImageLogger",
+            "target": "train_mask.ImageLogger",
             "params": {
                 "batch_frequency": 750,
                 "max_images": 4,
@@ -777,7 +757,8 @@ if __name__ == "__main__":
         callbacks_cfg = lightning_config.callbacks
     else:
         callbacks_cfg = OmegaConf.create()
-
+    print(callbacks_cfg)
+    callbacks_cfg.image_logger.target='train_mask.ImageLogger'
     if 'metrics_over_trainsteps_checkpoint' in callbacks_cfg:
         print(
             'Caution: Saving checkpoints every n train steps without deleting. This might require some free space.')
@@ -801,41 +782,33 @@ if __name__ == "__main__":
         callbacks_cfg.ignore_keys_callback.params['ckpt_path'] = trainer_opt.resume_from_checkpoint
     elif 'ignore_keys_callback' in callbacks_cfg:
         del callbacks_cfg['ignore_keys_callback']
-
+    trainer_opt.max_steps=30001
     trainer_kwargs["callbacks"] = [instantiate_from_config(callbacks_cfg[k]) for k in callbacks_cfg]
     trainer_kwargs["max_steps"] = trainer_opt.max_steps
     trainer = Trainer.from_argparse_args(trainer_opt, **trainer_kwargs)
     trainer.logdir = logdir  ###
-    if opt.spatial_encoder_embedding:
-        config.data.params.train.params.mvtec_path = opt.mvtec_path
-        config.data.params.train.target = 'ldm.data.personalized.Personalized_mvtec_encoder'
-        config.data.params.train.params.data_enhance=True
-        if opt.random_mask:
-            config.data.params.train.params.random_mask = True
-        config.data.params.validation.params.mvtec_path = opt.mvtec_path
-        config.data.params.validation.target = 'ldm.data.personalized.Personalized_mvtec_encoder'
-        config.data.params.validation.params.set = 'validate'
-    elif opt.spatial_encoder:
-        config.data.params.train.target = 'ldm.data.personalized.PersonalizedBase_json'
-        config.data.params.validation.target = 'ldm.data.personalized.PersonalizedBase_json'
-        #config.data.params.train.params.data_root = opt.data_root + '/train'
-    # data
-    elif opt.test_dataset:
-        config.data.params.train.target = 'ldm.data.personalized.Personalized_mvtec'
-        config.data.params.train.params.sample_name = opt.sample_name
-        config.data.params.train.params.anomaly_name = opt.anomaly_name
 
-        config.data.params.validation.target = 'ldm.data.personalized.Personalized_mvtec'
-        config.data.params.validation.params.sample_name = opt.sample_name
-        config.data.params.validation.params.anomaly_name = opt.anomaly_name
-    else:
-        config.data.params.train.params.data_root = opt.data_root+'/train'
-        config.data.params.validation.params.data_root = opt.data_root+'/test'
+    print(f"the old train target: ", config.data.params.train.target)
+    config.data.params.train.target = 'ldm.data.personalized.Personalized_mvtec_mask'
+    config.data.params.train.params.mvtec_path = opt.mvtec_path
+    config.data.params.train.params.sample_name = opt.sample_name
+    config.data.params.train.params.anomaly_name = opt.anomaly_name
+    config.data.params.train.params.train_on_visa = opt.train_on_visa
+    config.data.params.validation.target = 'ldm.data.personalized.Personalized_mvtec_mask'
+    config.data.params.validation.params.mvtec_path = opt.mvtec_path
+    config.data.params.validation.params.sample_name = opt.sample_name
+    config.data.params.validation.params.anomaly_name = opt.anomaly_name
+    config.data.params.validation.params.train_on_visa = opt.train_on_visa
     #data = instantiate_from_config(config.data)
+    print(f"the new train target: ", config.data.params.train.target)
+    import sys;sys.exit(0)
 
     data = instantiate_from_config(config.data)
-    data.prepare_data()     ## GX: this function calls instantiate_from_config, which initializes the dataset.
-    data.setup()        ## GX: not sure the purpose of this function.
+    # NOTE according to https://pytorch-lightning.readthedocs.io/en/latest/datamodules.html
+    # calling these ourselves should not be necessary but it is.
+    # lightning still takes care of proper multiprocessing though
+    data.prepare_data()
+    data.setup()
     print("#### Data #####")
     for k in data.datasets:
         print(f"{k}, {data.datasets[k].__class__.__name__}, {len(data.datasets[k])}")
@@ -883,8 +856,26 @@ if __name__ == "__main__":
     signal.signal(signal.SIGUSR1, melk)
     signal.signal(signal.SIGUSR2, divein)
 
+    # print(f"=================================")
+    # for name, param in model.named_parameters():
+    #     if param.requires_grad:
+    #         print(name, param.data.size())
+
+    # import sys;sys.exit(0)
+
+    # print(f"comes to this place...")
+    # print(f"comes to this place...")
+    # import sys;sys.exit(0)
+
     # run
-    if opt.train:
-        trainer.fit(model, data)
-    if not opt.no_test and not trainer.interrupted:
-        trainer.test(model, data)
+    trainer.fit(model, data)
+    print("...over...")
+    import sys;sys.exit(0)
+    # if opt.train:
+    #     try:
+    #         trainer.fit(model, data)
+    #     except Exception:
+    #         melk()
+    #         raise
+    # if not opt.no_test and not trainer.interrupted:
+    #     trainer.test(model, data)

@@ -7,8 +7,12 @@ from torch.utils.data import Dataset
 from torchvision import transforms
 import json
 import random
-from .mask_generate import generate_mask
+try:
+    from .mask_generate import generate_mask
+except:
+    from mask_generate import generate_mask
 import cv2
+import sys;sys.path.append("/research/cvl-guoxia11/anomaly_detection_v2/anomalydiffusion/")
 from utils import random_transform
 import numpy as np
 imagenet_templates_smallest = [
@@ -134,6 +138,131 @@ per_img_token_list = [
 ]
 
 class Personalized_mvtec_encoder(Dataset):
+    def __init__(self,
+                 mvtec_path,
+                 size=None,
+                 repeats=1,
+                 interpolation="bicubic",
+                 flip_p=0.5,
+                 set="train",
+                 placeholder_token="*",
+                 per_image_tokens=False,
+                 center_crop=False,
+                 mixing_prob=0.25,
+                 coarse_class_text=None,
+                 data_enhance=False,
+                 random_mask=False,
+                 **kwargs
+                 ):
+        self.data_enhance=None
+        if data_enhance:
+            self.data_enhance=random_transform()
+        self.data_root=mvtec_path
+        sample_anomaly_pairs=[]
+        with open(os.path.join('/research/cvl-guoxia11/anomaly_detection_v2/anomalydiffusion/name-anomaly.txt'),'r') as f:
+            data=f.read().split('\n')
+            for i in data:
+                sample_name,anomaly_name=i.split('+')
+                sample_anomaly_pairs.append((sample_name,anomaly_name))
+        self.data=[]
+        if data_enhance:
+            size=512
+        self.size = size
+        self.interpolation = {"linear": PIL.Image.LINEAR,
+                              "bilinear": PIL.Image.BILINEAR,
+                              "bicubic": PIL.Image.BICUBIC,
+                              "lanczos": PIL.Image.LANCZOS,
+                              }[interpolation]
+        self.flip = transforms.RandomHorizontalFlip(p=flip_p)
+        cnt=0
+        for sample_name,anomaly_name in sample_anomaly_pairs:
+            print(sample_name,anomaly_name)
+            img_path=os.path.join(self.data_root,sample_name,'test',anomaly_name)
+            mask_path=os.path.join(self.data_root,sample_name,'ground_truth',anomaly_name)
+            img_files=os.listdir(img_path)
+            mask_files=os.listdir(mask_path)
+            img_files.sort(key=lambda x:int(x[:3]))
+            mask_files.sort(key=lambda x: int(x[:3]))
+            img_files=[os.path.join(img_path,file_name) for file_name in img_files]
+            mask_files=[os.path.join(mask_path,file_name) for file_name in mask_files]
+            for idx in range(len(img_files)):
+                if set=='train' and idx>len(img_files)//3:
+                    break
+                if set!='train':
+                    if idx<len(img_files)//3:
+                        continue
+                    elif idx>len(img_files)//3+1:
+                        break
+                mask_filename = mask_files[idx]
+                img_filename = img_files[idx]
+                image = Image.open(img_filename)
+                mask = Image.open(mask_filename).convert("L")
+                if not image.mode == "RGB":
+                    image = image.convert("RGB")
+                img = np.array(image).astype(np.uint8)
+                mas = np.array(mask).astype(np.float32)
+                image = Image.fromarray(img)
+                mask = Image.fromarray(mas)
+                image = image.resize((size, size), resample=self.interpolation)
+                mask = mask.resize((size, size), resample=self.interpolation)
+                image = np.array(image).astype(np.uint8)
+                mask = np.array(mask).astype(np.float32)
+                image= (image / 127.5 - 1.0).astype(np.float32)
+                mask = mask / 255.0
+                mask[mask < 0.5] = 0
+                mask[mask >= 0.5] = 1
+                self.data.append((image,mask,sample_name+'+'+anomaly_name))
+            
+            break   ## GX: debug purpose.
+
+        self.num_images = len(self.data)
+        self._length = self.num_images
+
+        self.placeholder_token = placeholder_token
+
+        self.per_image_tokens = per_image_tokens
+        self.center_crop = center_crop
+        self.mixing_prob = mixing_prob
+
+        self.coarse_class_text = coarse_class_text
+
+        if per_image_tokens:
+            assert self.num_images < len(per_img_token_list), f"Can't use per-image tokens when the training set contains more than {len(per_img_token_list)} tokens. To enable larger sets, add more tokens to 'per_img_token_list'."
+
+        if set == "train":
+            self._length = self.num_images * repeats
+        else:
+            self._length = 4
+        self.random_mask=random_mask
+
+    def __len__(self):
+        return self._length
+
+    def __getitem__(self, idx):
+        idx=idx%self.num_images
+        example = {}
+
+
+        placeholder_string = self.placeholder_token
+        if self.coarse_class_text:
+            placeholder_string = f"{self.coarse_class_text} {placeholder_string}"
+
+        if self.per_image_tokens and np.random.uniform() < self.mixing_prob:
+            text = random.choice(imagenet_dual_templates_small).format(placeholder_string, per_img_token_list[i % self.num_images])
+        else:
+            text = random.choice(imagenet_templates_small).format(placeholder_string)
+        image=self.data[idx][0]
+        if self.random_mask:
+            mask=generate_mask(256)
+        else:
+            mask=self.data[idx][1]
+        example["caption"] = text
+        example["image"] = image
+        example["mask"] = mask
+        example["name"]=self.data[idx][2]
+        return example
+
+class Personalized_mvtec_mask_encoder(Dataset):
     def __init__(self,
                  mvtec_path,
                  size=None,
@@ -444,3 +573,14 @@ class Positive_sample_with_generated_mask(Dataset):
         example["mask"] = mask
         example["name"]=self.name
         return example
+
+if __name__ == "__main__":
+    dataloader = Personalized_mvtec_encoder(mvtec_path="/user/guoxia11/cvl/anomaly_detection/anomaly_detection_dataset/mvtec", size=256)
+    # dataloader = Personalized_mvtec_mask(mvtec_path="/user/guoxia11/cvl/anomaly_detection/anomaly_detection_dataset/mvtec",
+    #                                     anomaly_name='broken_small', sample_name='bottle')
+    for idx, data in enumerate(dataloader):
+        print(idx)
+        print(data["image"].shape)
+        print(data["mask"].shape)
+        if idx == 2:
+            break

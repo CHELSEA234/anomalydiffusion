@@ -117,7 +117,7 @@ class EmbeddingManager(nn.Module):
                     max_step_tokens = 1 + self.progressive_counter // PROGRESSIVE_SCALE
                 else:#执行这个
                     max_step_tokens = self.max_vectors_per_token
-                if self.spatial_encoder and img is not None:
+                if self.spatial_encoder and img is not None:    ## skip this one in train_mask.py
                     placeholder_embedding=self.spatial_encoder_model(img)
                     num_vectors_for_token = min(placeholder_embedding.shape[1], max_step_tokens)
                     placeholder_rows, placeholder_cols = torch.where(tokenized_text == placeholder_token.to(device))

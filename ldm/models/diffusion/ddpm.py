@@ -608,7 +608,7 @@ class LatentDiffusion(DDPM):
         position=None
         if self.cond_stage_forward is None:
             if hasattr(self.cond_stage_model, 'encode') and callable(self.cond_stage_model.encode):
-                c,position = self.cond_stage_model.encode(c, cond_img=x,embedding_manager=self.embedding_manager,name=name)
+                c,position = self.cond_stage_model.encode(c,cond_img=x,embedding_manager=self.embedding_manager,name=name)
                 if isinstance(c, DiagonalGaussianDistribution):
                     c = c.mode()
             else:
@@ -1489,7 +1489,7 @@ class LatentDiffusion(DDPM):
                 denoise_grid = self._get_denoise_row_from_list(z_denoise_row)
                 log["denoise_row"] = denoise_grid
 
-            uc,_ = self.get_learned_conditioning(len(c) * [""])
+            uc,_ = self.get_learned_conditioning(len(c) * [""])     ## GX: c is torch.Size([4, 77, 1280]); this is the trace-back place. 
             sample_scaled, _ = self.sample_log(cond=c,
                                                batch_size=N,
                                                ddim=use_ddim,

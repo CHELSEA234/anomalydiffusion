@@ -420,8 +420,9 @@ class ImageLogger(Callback):
         self.log_on_batch_idx = log_on_batch_idx
         self.log_images_kwargs = log_images_kwargs if log_images_kwargs else {}
         self.log_first_step = log_first_step
-        self.log_images_kwargs['inpaint'] = True
-        self.log_images_kwargs['sample'] = False
+        self.log_images_kwargs['inpaint'] = False
+        self.log_images_kwargs['sample'] = True
+        
     @rank_zero_only
     def _testtube(self, pl_module, images, batch_idx, split):
         for k in images:
