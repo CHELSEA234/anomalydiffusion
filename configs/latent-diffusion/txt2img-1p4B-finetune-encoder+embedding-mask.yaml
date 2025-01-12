@@ -23,7 +23,7 @@ model:
         placeholder_strings: ["*"]
         initializer_words: ["sculpture"]
         per_image_tokens: false
-        num_vectors_per_token: 8
+        num_vectors_per_token: 16
         progressive_words: False
 
     unet_config:
@@ -79,7 +79,6 @@ model:
         n_embed: 1280
         n_layer: 32
 
-
 data:
   target: main.DataModuleFromConfig
   params:
@@ -88,14 +87,14 @@ data:
     wrap: false
     shuffle_val_dataloader: True
     train:
-      target: ldm.data.personalized.Personalized_mvtec_encoder
+      target: ldm.data.personalized.Personalized_mvtec_mask_encoder
       params:
         size: 256
         set: train
         per_image_tokens: false
         repeats: 20
     validation:
-      target: ldm.data.personalized.Personalized_mvtec_encoder
+      target: ldm.data.personalized.Personalized_mvtec_mask_encoder
       params:
         size: 256
         set: val

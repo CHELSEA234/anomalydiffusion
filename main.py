@@ -397,7 +397,7 @@ class SetupCallback(Callback):
 
 
 class ImageLogger(Callback):
-    def __init__(self, batch_frequency, max_images, clamp=True, increase_log_steps=True,
+    def __init__(self, batch_frequency, max_images, inpaint=False, clamp=True, increase_log_steps=True,
                  rescale=True, disabled=False, log_on_batch_idx=False, log_first_step=False,
                  log_images_kwargs=None,test_dataset=False,sample_name=None,anomaly_name=None,attention_mask=False):
         super().__init__()
@@ -420,8 +420,12 @@ class ImageLogger(Callback):
         self.log_on_batch_idx = log_on_batch_idx
         self.log_images_kwargs = log_images_kwargs if log_images_kwargs else {}
         self.log_first_step = log_first_step
-        self.log_images_kwargs['inpaint'] = False
-        self.log_images_kwargs['sample'] = True
+        if inpaint:
+            self.log_images_kwargs['inpaint'] = True
+            self.log_images_kwargs['sample'] = False
+        else:
+            self.log_images_kwargs['inpaint'] = False
+            self.log_images_kwargs['sample'] = True
         
     @rank_zero_only
     def _testtube(self, pl_module, images, batch_idx, split):
@@ -605,7 +609,17 @@ if __name__ == "__main__":
 
         nowname = now + name + opt.postfix
         logdir = os.path.join(opt.logdir, nowname)
-    logdir=os.path.join(opt.logdir, 'anomaly-checkpoints')
+        # print("base:")
+        # print(opt.base)
+        # import sys;sys.exit(0)
+
+    if 'configs/latent-diffusion/txt2img-1p4B-finetune-encoder+embedding-mask.yaml' in opt.base:
+        logdir=os.path.join(opt.logdir, 'anomaly-mask-checkpoints')
+        opt_inpaint = False
+    elif 'configs/latent-diffusion/txt2img-1p4B-finetune-encoder+embedding.yaml' in opt.base:
+        logdir=os.path.join(opt.logdir, 'anomaly-img-checkpoints')
+        opt_inpaint = True
+
     ckptdir = os.path.join(logdir, "checkpoints")
     cfgdir = os.path.join(logdir, "configs")
     seed_everything(opt.seed)
@@ -731,6 +745,7 @@ if __name__ == "__main__":
                 "batch_frequency": 750,
                 "max_images": 4,
                 "clamp": True,
+                "inpaint": opt_inpaint,
                 "test_dataset":opt.test_dataset,
                 "sample_name": opt.sample_name,
                 "anomaly_name":opt.anomaly_name,
@@ -793,12 +808,15 @@ if __name__ == "__main__":
     # print()
     # import sys;sys.exit(0)
     config.data.params.train.params.mvtec_path = opt.mvtec_path
-    config.data.params.train.target = 'ldm.data.personalized.Personalized_mvtec_mask_encoder'
+    # config.data.params.train.target = 'ldm.data.personalized.Personalized_mvtec_mask_encoder'
+    # config.data.params.train.target = 'ldm.data.personalized.Personalized_mvtec_encoder'
     config.data.params.train.params.data_enhance=True
+    # config.data.params.train.params.data_enhance=False
     if opt.random_mask:
         config.data.params.train.params.random_mask = True
     config.data.params.validation.params.mvtec_path = opt.mvtec_path
-    config.data.params.validation.target = 'ldm.data.personalized.Personalized_mvtec_mask_encoder'
+    # config.data.params.validation.target = 'ldm.data.personalized.Personalized_mvtec_mask_encoder'
+    # config.data.params.validation.target = 'ldm.data.personalized.Personalized_mvtec_encoder'
     config.data.params.validation.params.set = 'validate'
 
     # if opt.spatial_encoder_embedding:

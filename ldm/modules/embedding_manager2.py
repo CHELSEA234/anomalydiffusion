@@ -140,9 +140,15 @@ class EmbeddingManager(nn.Module):
                     max_step_tokens = 1 + self.progressive_counter // PROGRESSIVE_SCALE
                 else:  # 执行这个
                     max_step_tokens = self.max_vectors_per_token    ## GX: 4; define when initializing the class.
+                ##TODO-GX:not sure about which cases correspond to these three condition blocks.
                 if self.spatial_encoder and (img is not None) and (name is not None):
                     placeholder_embedding2 = self.spatial_encoder_model(img)    ## GX: torch.Size([4, 1, 256, 256]) ==> torch.Size([4, 4, 1280])
+                    
+                    ## GX: guess using spatial encoder than it will generate different things. 
                     placeholder_embedding= torch.cat([placeholder_embedding,placeholder_embedding2],dim=1)  ## placeholder_embedding: torch.Size([4, 8, 1280])
+                    # placeholder_embedding= torch.cat([placeholder_embedding,placeholder_embedding],dim=1)  ## placeholder_embedding: torch.Size([4, 8, 1280])
+                    # print(placeholder_embedding.size())
+
                     num_vectors_for_token = placeholder_embedding.shape[1]
                     # num_vectors_for_token = min(placeholder_embedding.shape[1], max_step_tokens)
                     #print(num_vectors_for_token)
@@ -174,7 +180,8 @@ class EmbeddingManager(nn.Module):
                     continue
 
                 else:
-                    num_vectors_for_token = min(placeholder_embedding.shape[0], max_step_tokens)
+                    num_vectors_for_token = min(placeholder_embedding.shape[0], max_step_tokens)  
+                    # num_vectors_for_token = placeholder_embedding.shape[1]  ## GX: not sure why swtich from the last one to this one.
 
                     placeholder_rows, placeholder_cols = torch.where(tokenized_text == placeholder_token.to(device))
                     # rows对应batchsize：0~batchsize-1;col:对应*在哪个位置
@@ -190,12 +197,22 @@ class EmbeddingManager(nn.Module):
                         new_token_row = torch.cat(
                             [tokenized_text[row][:col], placeholder_token.repeat(num_vectors_for_token).to(device),
                              tokenized_text[row][col + 1:]], axis=0)[:n]  # 把*插到77维的text中间
-                        new_embed_row = torch.cat(
-                            [embedded_text[row][:col], placeholder_embedding[:num_vectors_for_token],
+                        
+                        # print()
+                        # print(embedded_text[row][:col].size())
+                        # print(placeholder_embedding[row,:num_vectors_for_token].size())
+                        # print()
+                        # # import sys;sys.exit(0)
+                        # new_embed_row = torch.cat(
+                        #     [embedded_text[row][:col], placeholder_embedding[:num_vectors_for_token],
+                        #      embedded_text[row][col + 1:]], axis=0)[:n]
+                        new_embed_row = torch.cat(  ##TODO-GX: this is directly copied from the embedding_manager.py; not sure.
+                            [embedded_text[row][:col], placeholder_embedding[row,:num_vectors_for_token],
                              embedded_text[row][col + 1:]], axis=0)[:n]
 
                         embedded_text[row] = new_embed_row
                         tokenized_text[row] = new_token_row
+                    position = None
 
         return embedded_text,position
 

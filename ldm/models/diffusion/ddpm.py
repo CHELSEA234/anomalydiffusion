@@ -729,7 +729,8 @@ class LatentDiffusion(DDPM):
             mask = mask.to(self.device)
             mask = mask.squeeze()
         masked_img = None
-        if self.spatial_encoder_and_embedding:
+        # if self.spatial_encoder_and_embedding:
+        if self.spatial_encoder_and_embedding and mask is not None:
             tmp_mask = mask.unsqueeze(1).clone()
             tmp_mask[tmp_mask < 0.5] = 0
             tmp_mask[tmp_mask >= 0.5] = 1
@@ -1495,7 +1496,7 @@ class LatentDiffusion(DDPM):
                                                ddim=use_ddim,
                                                ddim_steps=ddim_steps,
                                                eta=ddim_eta,
-                                               unconditional_guidance_scale=5.0,
+                                               unconditional_guidance_scale=5., ## GX: what is unconditional_guidance_scale???
                                                unconditional_conditioning=uc)
             log["samples_scaled"] = self.decode_first_stage(sample_scaled)
 
@@ -1567,6 +1568,7 @@ class LatentDiffusion(DDPM):
             loss.backward()
             optimizer_z.step()
         return gen_img
+        
     def configure_optimizers(self):
         lr = self.learning_rate
         if self.spatial_encoder_and_embedding:
@@ -1574,7 +1576,8 @@ class LatentDiffusion(DDPM):
             #                {'params': self.embedding_manager.spatial_encoder_model.parameters(), 'lr': 1}]
             params = list(self.embedding_manager.embedding_parameters())
             params += list(self.embedding_manager.spatial_encoder_model.parameters())
-            opt = torch.optim.Adam(params,lr=lr)
+            opt = torch.optim.Adam(params,lr=lr)    ## default for the generation ad-image.
+            # opt = torch.optim.AdamW(params,lr=lr)
             return opt
         if self.spatial_encoder:
             params=list(self.embedding_manager.spatial_encoder_model.parameters())
