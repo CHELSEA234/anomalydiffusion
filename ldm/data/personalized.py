@@ -320,12 +320,12 @@ class Personalized_mvtec_mask_encoder(Dataset):
                         break
                 mask_filename = mask_files[idx]
                 img_filename = img_files[idx]
-                image = Image.open(img_filename)
-                mask = Image.open(mask_filename).convert("L")
-                if not image.mode == "RGB":
-                    image = image.convert("RGB")
+                image = Image.open(img_filename).convert("L")
+                mask = Image.open(mask_filename).convert("RGB")
+
                 img = np.array(image).astype(np.uint8)
-                mas = np.array(mask).astype(np.float32)
+                # mas = np.array(mask).astype(np.float32)
+                mas = np.array(mask).astype(np.uint8)
                 image = Image.fromarray(img)
                 mask = Image.fromarray(mas)
                 image = image.resize((size, size), resample=self.interpolation)
@@ -333,12 +333,20 @@ class Personalized_mvtec_mask_encoder(Dataset):
                 image = np.array(image).astype(np.uint8)
                 mask = np.array(mask).astype(np.float32)
                 image= (image / 127.5 - 1.0).astype(np.float32)
-                mask = mask / 255.0
-                mask[mask < 0.5] = 0
-                mask[mask >= 0.5] = 1
-                self.data.append((image,mask,sample_name+'+'+anomaly_name))
-            
-            break   ## GX: debug purpose.
+                mask = (mask / 127.5 - 1.0).astype(np.float32)
+                # mask = mask / 255.0
+                # mask[mask < 0.5] = 0
+                # mask[mask >= 0.5] = 1
+                self.data.append((mask,image,sample_name+'+'+anomaly_name)) 
+                ## GX: nasty changes; when called, example['mask] and example['image'] are image and mask, respectively.
+                # print(image.shape)
+                # print(mask.shape)
+                # import sys;sys.exit(0)
+            break
+            # cnt+=1
+            # if cnt == 4:
+            #     break   ## GX: debug purpose.
+
 
         self.num_images = len(self.data)
         self._length = self.num_images
@@ -366,7 +374,6 @@ class Personalized_mvtec_mask_encoder(Dataset):
     def __getitem__(self, idx):
         idx=idx%self.num_images
         example = {}
-
 
         placeholder_string = self.placeholder_token
         if self.coarse_class_text:
@@ -575,7 +582,10 @@ class Positive_sample_with_generated_mask(Dataset):
         return example
 
 if __name__ == "__main__":
-    dataloader = Personalized_mvtec_encoder(mvtec_path="/user/guoxia11/cvl/anomaly_detection/anomaly_detection_dataset/mvtec", size=256)
+    dataloader = Personalized_mvtec_encoder(mvtec_path="/user/guoxia11/cvl/anomaly_detection/anomaly_detection_dataset/mvtec", 
+                                            size=256)
+    dataloader = Personalized_mvtec_mask_encoder(mvtec_path="/user/guoxia11/cvl/anomaly_detection/anomaly_detection_dataset/mvtec", 
+                                                size=256)
     # dataloader = Personalized_mvtec_mask(mvtec_path="/user/guoxia11/cvl/anomaly_detection/anomaly_detection_dataset/mvtec",
     #                                     anomaly_name='broken_small', sample_name='bottle')
     for idx, data in enumerate(dataloader):
