@@ -808,15 +808,10 @@ if __name__ == "__main__":
     # print()
     # import sys;sys.exit(0)
     config.data.params.train.params.mvtec_path = opt.mvtec_path
-    # config.data.params.train.target = 'ldm.data.personalized.Personalized_mvtec_mask_encoder'
-    # config.data.params.train.target = 'ldm.data.personalized.Personalized_mvtec_encoder'
     config.data.params.train.params.data_enhance=True
-    # config.data.params.train.params.data_enhance=False
     if opt.random_mask:
         config.data.params.train.params.random_mask = True
     config.data.params.validation.params.mvtec_path = opt.mvtec_path
-    # config.data.params.validation.target = 'ldm.data.personalized.Personalized_mvtec_mask_encoder'
-    # config.data.params.validation.target = 'ldm.data.personalized.Personalized_mvtec_encoder'
     config.data.params.validation.params.set = 'validate'
 
     # if opt.spatial_encoder_embedding:

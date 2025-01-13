@@ -546,10 +546,15 @@ class Personalized_mvtec_mask_encoder(Dataset):
         if self.coarse_class_text:
             placeholder_string = f"{self.coarse_class_text} {placeholder_string}"
 
+        # if self.per_image_tokens and np.random.uniform() < self.mixing_prob:
+        #     text = random.choice(imagenet_dual_templates_small).format(placeholder_string, per_img_token_list[i % self.num_images])
+        # else:
+        #     text = random.choice(imagenet_templates_small).format(placeholder_string)
+
         if self.per_image_tokens and np.random.uniform() < self.mixing_prob:
-            text = random.choice(imagenet_dual_templates_small).format(placeholder_string, per_img_token_list[i % self.num_images])
+            text = random.choice(mask_templates_smallest).format(placeholder_string, per_img_token_list[i % self.num_images])
         else:
-            text = random.choice(imagenet_templates_small).format(placeholder_string)
+            text = random.choice(mask_templates_smallest).format(placeholder_string)
 
         example["caption"] = text
         idx = i % self.num_images
@@ -571,7 +576,7 @@ class Personalized_mvtec_mask_encoder(Dataset):
         image = np.array(image).astype(np.uint8)
         example["image"] = (image / 127.5 - 1.0).astype(np.float32)
         # example["mask"] = mask.astype(np.float32)
-        # example["name"] = self.name
+        example["name"] = self.name
         return example
 
 class Positive_sample_with_generated_mask(Dataset):

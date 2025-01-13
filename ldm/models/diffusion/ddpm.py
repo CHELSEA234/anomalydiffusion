@@ -1496,7 +1496,7 @@ class LatentDiffusion(DDPM):
                                                ddim=use_ddim,
                                                ddim_steps=ddim_steps,
                                                eta=ddim_eta,
-                                               unconditional_guidance_scale=5., ## GX: what is unconditional_guidance_scale???
+                                               unconditional_guidance_scale=7.5, ## GX: what is unconditional_guidance_scale???
                                                unconditional_conditioning=uc)
             log["samples_scaled"] = self.decode_first_stage(sample_scaled)
 

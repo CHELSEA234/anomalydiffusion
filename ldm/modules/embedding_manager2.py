@@ -184,32 +184,87 @@ class EmbeddingManager(nn.Module):
                         position[row][0]=col
                         position[row][1]=col+num_vectors_for_token
 
-                # elif name is None:
-                else:
+                else:   ## GX: mask generation entry. 
                     position = None
-                    num_vectors_for_token = min(placeholder_embedding.shape[0], max_step_tokens)
-                    # print(name)
-                    # print("placeholder_embedding: ", placeholder_embedding.size())
-                    # import sys;sys.exit(0)
 
-                    placeholder_rows, placeholder_cols = torch.where(tokenized_text == placeholder_token.to(device))
-                    #rows对应batchsize：0~batchsize-1;col:对应*在哪个位置
-                    if placeholder_rows.nelement() == 0:
-                        continue
+                    if placeholder_embedding.dim() == 2:    ## when name list is None.
+                        num_vectors_for_token = min(placeholder_embedding.shape[0], max_step_tokens)
+                        # print(name) 
+                        # print("placeholder_embedding: ", placeholder_embedding.size())  ## torch.Size([16, 1280])
+                        # print()
+                        # print("tokenized text: ", tokenized_text)
+                        # print("placeholder text: ", placeholder_token)
+                        placeholder_rows, placeholder_cols = torch.where(tokenized_text == placeholder_token.to(device))
+                        # print(placeholder_rows, placeholder_cols)
+                        #rows对应batchsize：0~batchsize-1;col:对应*在哪个位置
+                        if placeholder_rows.nelement() == 0:
+                            continue
 
-                    sorted_cols, sort_idx = torch.sort(placeholder_cols, descending=True)
-                    sorted_rows = placeholder_rows[sort_idx]
+                        sorted_cols, sort_idx = torch.sort(placeholder_cols, descending=True)
+                        sorted_rows = placeholder_rows[sort_idx]
 
-                    for idx in range(len(sorted_rows)):
-                        row = sorted_rows[idx]
-                        col = sorted_cols[idx]
+                        for idx in range(len(sorted_rows)):
+                            row = sorted_rows[idx]
+                            col = sorted_cols[idx]
 
-                        new_token_row = torch.cat([tokenized_text[row][:col], placeholder_token.repeat(num_vectors_for_token).to(device), tokenized_text[row][col + 1:]], axis=0)[:n] #把*插到77维的text中间
-                        new_embed_row = torch.cat([embedded_text[row][:col], placeholder_embedding[:num_vectors_for_token], embedded_text[row][col + 1:]], axis=0)[:n]
+                            # print()
+                            # print(embedded_text[row][:col].size())  # torch.Size([6, 1280])
+                            # print(placeholder_embedding[:num_vectors_for_token].size())     # torch.Size([16, 1280]) ==> just select the entire placeholder_embedding
+                            # print(placeholder_embedding[row,:num_vectors_for_token].size()) # torch.Size([16]) ==> just select row-th row's first num_vectors_for_token elements. 
+                            # print()
 
-                        embedded_text[row]  = new_embed_row
-                        tokenized_text[row] = new_token_row
+                            new_token_row = torch.cat([tokenized_text[row][:col], placeholder_token.repeat(num_vectors_for_token).to(device), tokenized_text[row][col + 1:]], axis=0)[:n] #把*插到77维的text中间
+                            new_embed_row = torch.cat([embedded_text[row][:col], placeholder_embedding[:num_vectors_for_token], embedded_text[row][col + 1:]], axis=0)[:n]
 
+                            embedded_text[row]  = new_embed_row
+                            tokenized_text[row] = new_token_row
+                        # print("==================")
+                        # print(embedded_text.size())     ## torch.Size([4, 77, 1280])
+                        # print(tokenized_text.size())    ## torch.Size([4, 77])
+                        # print(f"...over...")
+                        # import sys;sys.exit(0)
+
+                    elif placeholder_embedding.dim() == 3:    ## when name list is not None
+                        num_vectors_for_token = min(placeholder_embedding.shape[1], max_step_tokens)
+                        # print(name) 
+                        # print("placeholder_embedding: ", placeholder_embedding.size())  ## torch.Size([4, 16, 1280])
+
+                        placeholder_rows, placeholder_cols = torch.where(tokenized_text == placeholder_token.to(device))
+                        #rows对应batchsize：0~batchsize-1;col:对应*在哪个位置
+                        if placeholder_rows.nelement() == 0:
+                            continue
+
+                        sorted_cols, sort_idx = torch.sort(placeholder_cols, descending=True)
+                        sorted_rows = placeholder_rows[sort_idx]
+
+                        for idx in range(len(sorted_rows)):
+                            row = sorted_rows[idx]
+                            col = sorted_cols[idx]
+
+                            # print()
+                            # print(embedded_text[row][:col].size())  # torch.Size([6, 1280])
+                            # print(placeholder_embedding[:num_vectors_for_token].size())     # torch.Size([4, 16, 1280])
+                            # print(placeholder_embedding[row,:num_vectors_for_token].size()) # torch.Size([16, 1280])
+                            # print(placeholder_embedding[row][:num_vectors_for_token].size()) # torch.Size([16, 1280])
+                            # print()
+
+                            new_token_row = torch.cat([tokenized_text[row][:col], placeholder_token.repeat(num_vectors_for_token).to(device), tokenized_text[row][col + 1:]], axis=0)[:n] #把*插到77维的text中间
+                            
+                            ## GX: This indexing operation directly slices the second dimension. more efficiently. 
+                            new_embed_row = torch.cat([embedded_text[row][:col], placeholder_embedding[row, :num_vectors_for_token], embedded_text[row][col + 1:]], axis=0)[:n]
+                            
+                            ## GX: updates: two steps; first 3D to 2D; then slices the second dimension 
+                            # new_embed_row = torch.cat([embedded_text[row][:col], placeholder_embedding[row][:num_vectors_for_token], embedded_text[row][col + 1:]], axis=0)[:n]
+                            embedded_text[row]  = new_embed_row
+                            tokenized_text[row] = new_token_row
+
+                        # print("==================")
+                        # print(embedded_text.size())     ## torch.Size([4, 77, 1280])
+                        # print(tokenized_text.size())    ## torch.Size([4, 77])
+                        # print(f"...over...")
+                        # import sys;sys.exit(0)
+
+                    # print("...over...")
                     # import sys;sys.exit(0)
 
                 # #     continue
