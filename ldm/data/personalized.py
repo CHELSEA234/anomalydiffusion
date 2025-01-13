@@ -571,7 +571,7 @@ class Personalized_mvtec_mask_encoder(Dataset):
         image = np.array(image).astype(np.uint8)
         example["image"] = (image / 127.5 - 1.0).astype(np.float32)
         # example["mask"] = mask.astype(np.float32)
-        example["name"] = self.name
+        # example["name"] = self.name
         return example
 
 class Positive_sample_with_generated_mask(Dataset):
@@ -675,7 +675,7 @@ class Positive_sample_with_generated_mask(Dataset):
         mask[mask < 0.5] = 0
         mask[mask >= 0.5] = 1
         example["mask"] = mask
-        example["name"]=self.name
+        example["name"] = self.name
         return example
 
 if __name__ == "__main__":
